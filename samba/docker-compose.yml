@@ -16,8 +16,8 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
 
     volumes:
-      - samba_data:/var/lib/samba
-      - samba_etc:/etc/samba
+      - ./data/samba:/var/lib/samba
+      - ./data/etc-samba:/etc/samba
 
     ports:
       - "53:53/tcp"
@@ -32,7 +32,3 @@ services:
       - "636:636/tcp"
       - "3268:3268/tcp"
       - "3269:3269/tcp"
-
-volumes:
-  samba_data:
-  samba_etc:
