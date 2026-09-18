@@ -37,3 +37,4 @@ services:
 
 volumes:
   samba_data:
+  samba_etc:
