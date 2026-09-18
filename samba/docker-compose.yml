@@ -34,3 +34,6 @@ services:
 
     cap_add:
       - NET_ADMIN
+
+  volumes:
+    samba_data:
