@@ -29,6 +29,7 @@ if [ ! -f /var/lib/samba/private/sam.ldb ]; then
         --dns-backend=SAMBA_INTERNAL \
         --adminpass="$ADMIN_PASSWORD" \
         --use-rfc2307
+        --skip-sysvolacl
 
     echo "AD provisioned."
 

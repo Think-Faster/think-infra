@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
 
+    privileged: true
     container_name: samba-ad
     hostname: dc.tf.greefob.ru
 
