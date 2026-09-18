@@ -1,15 +1,19 @@
 services:
   samba-ad:
-    image: dockurr/samba
+    build:
+      context: .
+      dockerfile: Dockerfile
+
     container_name: samba-ad
-    hostname: dc
+    hostname: dc.tf.greefob.ru
+
     restart: unless-stopped
 
     environment:
-      DOMAIN: ${SAMBA_DOMAIN}
-      REALM: ${SAMBA_REALM}
-      NETBIOS: ${SAMBA_NETBIOS}
-      ADMIN_PASSWORD: ${SAMBA_ADMIN_PASSWORD}
+      DOMAIN: ${DOMAIN}
+      REALM: ${REALM}
+      NETBIOS: ${NETBIOS}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
 
     volumes:
       - samba_data:/var/lib/samba
@@ -20,9 +24,6 @@ services:
       - "53:53/udp"
       - "88:88/tcp"
       - "88:88/udp"
-      - "135:135/tcp"
-      - "137-138:137-138/udp"
-      - "139:139/tcp"
       - "389:389/tcp"
       - "389:389/udp"
       - "445:445/tcp"
@@ -31,9 +32,6 @@ services:
       - "636:636/tcp"
       - "3268:3268/tcp"
       - "3269:3269/tcp"
-
-    cap_add:
-      - NET_ADMIN
 
 volumes:
   samba_data:
