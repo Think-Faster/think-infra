@@ -10,6 +10,7 @@ POSTGRES_HOST="${POSTGRES_HOST:-tf-postgres}"
 POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 POSTGRES_DB="${POSTGRES_DB:-tf}"
 POSTGRES_ADMIN_USER="${POSTGRES_ADMIN_USER:-postgres}"
+POSTGRES_ADMIN_PASSWORD="${POSTGRES_ADMIN_PASSWORD:-}"
 
 # ============================================================
 # Logging
@@ -58,12 +59,18 @@ log "PostgreSQL host: $POSTGRES_HOST"
 log "PostgreSQL port: $POSTGRES_PORT"
 log "Database:        $POSTGRES_DB"
 log "Admin user:      $POSTGRES_ADMIN_USER"
+log "Admin password:  <hidden>"
 
 # ============================================================
 # Validate configuration
 # ============================================================
 
 log "Validating configuration..."
+
+if [ -z "$POSTGRES_ADMIN_PASSWORD" ]; then
+    log "ERROR: POSTGRES_ADMIN_PASSWORD is empty."
+    exit 1
+fi
 
 if [[ ! "$SCHEMA_NAME" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
     log "ERROR: invalid schema name: $SCHEMA_NAME"
@@ -89,31 +96,6 @@ log "  Maintenance role: $MAINTENANCE_ROLE"
 log "  Read/write role:  $READ_WRITE_ROLE"
 log "  Admin user:       $ADMIN_USER"
 log "  Application user: $APP_USER"
-
-# ============================================================
-# PostgreSQL administrator password
-# ============================================================
-
-log "============================================================"
-log "PostgreSQL administrator authentication"
-log "============================================================"
-
-printf "Password for PostgreSQL user '%s': " "$POSTGRES_ADMIN_USER"
-
-if ! read -r -s POSTGRES_ADMIN_PASSWORD; then
-    echo
-    log "ERROR: failed to read PostgreSQL administrator password."
-    exit 1
-fi
-
-echo
-
-if [ -z "$POSTGRES_ADMIN_PASSWORD" ]; then
-    log "ERROR: PostgreSQL administrator password cannot be empty."
-    exit 1
-fi
-
-log "PostgreSQL administrator password received."
 
 # ============================================================
 # PostgreSQL connectivity
@@ -226,16 +208,17 @@ log "Schema '$SCHEMA_NAME' does not exist."
 log "Proceeding with creation."
 
 # ============================================================
-# Passwords for new users
+# Initial passwords for new users
 # ============================================================
 
 log "============================================================"
 log "Preparing passwords for new users"
 log "============================================================"
 
-# Passwords are intentionally equal to usernames.
+# Initial passwords are intentionally equal to usernames.
 #
 # Example:
+#
 #   auth_admin -> password "auth_admin"
 #   auth_user  -> password "auth_user"
 #
@@ -244,8 +227,8 @@ log "============================================================"
 ADMIN_PASSWORD="$ADMIN_USER"
 APP_PASSWORD="$APP_USER"
 
-log "Password for '$ADMIN_USER' will be set to its username."
-log "Password for '$APP_USER' will be set to its username."
+log "Initial password for '$ADMIN_USER' = username."
+log "Initial password for '$APP_USER' = username."
 
 # ============================================================
 # Create PostgreSQL objects
