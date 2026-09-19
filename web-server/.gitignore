@@ -1,0 +1,9 @@
+.env
+
+nginx/nginx.conf
+
+certbot/conf/*
+certbot/www/*
+
+!certbot/conf/.gitkeep
+!certbot/www/.gitkeep
