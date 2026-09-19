@@ -1,0 +1,22 @@
+services:
+  create-schema:
+    build:
+      context: ./db
+      dockerfile: Dockerfile.create_schema
+
+    container_name: tf-create-schema
+
+    environment:
+      POSTGRES_HOST: tf-postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: tf
+      POSTGRES_ADMIN_USER: tf
+      POSTGRES_ADMIN_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+
+    volumes:
+      - ./db/schemas.conf:/app/schemas.conf:ro
+
+    stdin_open: true
+    tty: true
+
+    restart: "no"
