@@ -1,0 +1,11 @@
+FROM postgres:16
+
+WORKDIR /app
+
+COPY bootstrap.sh /app/bootstrap.sh
+COPY init.sh /app/init.sh
+
+RUN sed -i 's/\r$//' /app/bootstrap.sh /app/init.sh \
+    && chmod +x /app/bootstrap.sh /app/init.sh
+
+ENTRYPOINT ["/app/init.sh"]

@@ -9,4 +9,11 @@ services:
     cap_add:
       - IPC_LOCK
     command: server -dev
+    volumes:
+      - ./vault-data:/vault/data
+      - ./vault-config:/vault/config
+
+volumes:
+  vault-data:
+  vault-config:
     
