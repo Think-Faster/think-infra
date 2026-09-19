@@ -8,12 +8,6 @@ services:
 
     env_file:
       - .env.schemas
-    environment:
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${DB_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER}
-      POSTGRES_ADMIN_PASSWORD: ${POSTGRES_PASSWORD}
 
     networks:
       - app-network
