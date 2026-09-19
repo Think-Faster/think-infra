@@ -185,27 +185,21 @@ log "Creating new schema: $SCHEMA_NAME"
 log "============================================================"
 log ""
 
-log "Waiting for passwords..."
+log "Preparing passwords..."
 
-if ! read -r -s -p "Password for ${ADMIN_USER}: " ADMIN_PASSWORD </dev/tty; then
-    echo
-    log "ERROR: failed to read password for ${ADMIN_USER}."
-    log "Make sure the container is started with stdin_open=true and tty=true."
-    exit 1
-fi
+# auth_admin использует тот же пароль, что и PostgreSQL admin.
+ADMIN_PASSWORD="$POSTGRES_ADMIN_PASSWORD"
 
-echo
+log "Password for ${ADMIN_USER} will be taken from POSTGRES_ADMIN_PASSWORD."
+log "Admin password is set."
 
-if [ -z "$ADMIN_PASSWORD" ]; then
-    log "ERROR: password for ${ADMIN_USER} cannot be empty."
-    exit 1
-fi
-
-log "Password for ${ADMIN_USER} received."
+# Пароль приложения вводим вручную.
+log "Waiting for application user password..."
 
 if ! read -r -s -p "Password for ${APP_USER}: " APP_PASSWORD </dev/tty; then
     echo
     log "ERROR: failed to read password for ${APP_USER}."
+    log "Make sure the container is started with stdin_open=true and tty=true."
     exit 1
 fi
 
