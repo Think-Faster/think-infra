@@ -1,3 +1,4 @@
 samba/.env
 samba/data
 hashicorp/.env
+postgree/.env
