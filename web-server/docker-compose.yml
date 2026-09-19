@@ -2,7 +2,7 @@ services:
 
   nginx:
     image: nginx:1.29-alpine
-    container_name: greefob-nginx
+    container_name: tf-nginx
     restart: unless-stopped
 
     ports:
