@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: tf-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: tf
+      POSTGRES_USER: tf
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_backups:/backups
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tf -d tf"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  postgres_backups:
