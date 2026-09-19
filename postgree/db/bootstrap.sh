@@ -10,7 +10,6 @@ POSTGRES_HOST="${POSTGRES_HOST:-tf-postgres}"
 POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 POSTGRES_DB="${POSTGRES_DB:-tf}"
 POSTGRES_ADMIN_USER="${POSTGRES_ADMIN_USER:-postgres}"
-POSTGRES_ADMIN_PASSWORD="${POSTGRES_ADMIN_PASSWORD:-}"
 
 # ============================================================
 # Logging
@@ -59,18 +58,12 @@ log "PostgreSQL host: $POSTGRES_HOST"
 log "PostgreSQL port: $POSTGRES_PORT"
 log "Database:        $POSTGRES_DB"
 log "Admin user:      $POSTGRES_ADMIN_USER"
-log "Admin password:  <hidden>"
 
 # ============================================================
 # Validate configuration
 # ============================================================
 
 log "Validating configuration..."
-
-if [ -z "$POSTGRES_ADMIN_PASSWORD" ]; then
-    log "ERROR: POSTGRES_ADMIN_PASSWORD is empty."
-    exit 1
-fi
 
 if [[ ! "$SCHEMA_NAME" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
     log "ERROR: invalid schema name: $SCHEMA_NAME"
@@ -93,9 +86,34 @@ APP_USER="${SCHEMA_NAME}_user"
 log "PostgreSQL objects:"
 log "  Schema:           $SCHEMA_NAME"
 log "  Maintenance role: $MAINTENANCE_ROLE"
-log "  Read/write role:   $READ_WRITE_ROLE"
-log "  Admin user:        $ADMIN_USER"
-log "  Application user:  $APP_USER"
+log "  Read/write role:  $READ_WRITE_ROLE"
+log "  Admin user:       $ADMIN_USER"
+log "  Application user: $APP_USER"
+
+# ============================================================
+# PostgreSQL administrator password
+# ============================================================
+
+log "============================================================"
+log "PostgreSQL administrator authentication"
+log "============================================================"
+
+printf "Password for PostgreSQL user '%s': " "$POSTGRES_ADMIN_USER"
+
+if ! read -r -s POSTGRES_ADMIN_PASSWORD; then
+    echo
+    log "ERROR: failed to read PostgreSQL administrator password."
+    exit 1
+fi
+
+echo
+
+if [ -z "$POSTGRES_ADMIN_PASSWORD" ]; then
+    log "ERROR: PostgreSQL administrator password cannot be empty."
+    exit 1
+fi
+
+log "PostgreSQL administrator password received."
 
 # ============================================================
 # PostgreSQL connectivity
@@ -162,6 +180,8 @@ if ! PGPASSWORD="$POSTGRES_ADMIN_PASSWORD" \
 
     rm -f "$CONNECTION_TEST_FILE"
 
+    unset POSTGRES_ADMIN_PASSWORD
+
     exit 1
 fi
 
@@ -197,6 +217,8 @@ if [ "$SCHEMA_EXISTS" = "1" ]; then
     log "Existing roles and permissions will NOT be modified."
     log "Skipping."
 
+    unset POSTGRES_ADMIN_PASSWORD
+
     exit 0
 fi
 
@@ -204,45 +226,34 @@ log "Schema '$SCHEMA_NAME' does not exist."
 log "Proceeding with creation."
 
 # ============================================================
-# Application password
+# Passwords for new users
+# ============================================================
+
+log "============================================================"
+log "Preparing passwords for new users"
+log "============================================================"
+
+# Passwords are intentionally equal to usernames.
+#
+# Example:
+#   auth_admin -> password "auth_admin"
+#   auth_user  -> password "auth_user"
+#
+# These passwords should be changed after initial deployment.
+
+ADMIN_PASSWORD="$ADMIN_USER"
+APP_PASSWORD="$APP_USER"
+
+log "Password for '$ADMIN_USER' will be set to its username."
+log "Password for '$APP_USER' will be set to its username."
+
+# ============================================================
+# Create PostgreSQL objects
 # ============================================================
 
 log "============================================================"
 log "Creating new schema: $SCHEMA_NAME"
 log "============================================================"
-
-# Admin password is the same as PostgreSQL admin password.
-ADMIN_PASSWORD="$POSTGRES_ADMIN_PASSWORD"
-
-log "Password for $ADMIN_USER will be taken from POSTGRES_ADMIN_PASSWORD."
-
-# Application password is entered interactively.
-log "Waiting for application user password..."
-
-if [ ! -e /dev/tty ]; then
-    log "ERROR: /dev/tty is not available."
-    log "The container must be started with stdin_open=true and tty=true."
-    exit 1
-fi
-
-if ! read -r -s -p "Password for ${APP_USER}: " APP_PASSWORD </dev/tty; then
-    echo
-    log "ERROR: failed to read password for ${APP_USER}."
-    exit 1
-fi
-
-echo
-
-if [ -z "$APP_PASSWORD" ]; then
-    log "ERROR: password for ${APP_USER} cannot be empty."
-    exit 1
-fi
-
-log "Application password received."
-
-# ============================================================
-# Create PostgreSQL objects
-# ============================================================
 
 log "Starting PostgreSQL transaction..."
 
@@ -469,6 +480,7 @@ log "Verification completed successfully."
 # Cleanup
 # ============================================================
 
+unset POSTGRES_ADMIN_PASSWORD
 unset ADMIN_PASSWORD
 unset APP_PASSWORD
 
@@ -486,5 +498,8 @@ log "  Admin user:       $ADMIN_USER"
 log "  Maintenance role: $MAINTENANCE_ROLE"
 log "  App user:         $APP_USER"
 log "  Read/write role:  $READ_WRITE_ROLE"
+
+log "Initial passwords are equal to usernames."
+log "CHANGE THEM after initial deployment."
 
 log "Bootstrap finished successfully."
