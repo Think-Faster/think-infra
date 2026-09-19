@@ -185,40 +185,38 @@ log "Creating new schema: $SCHEMA_NAME"
 log "============================================================"
 log ""
 
-if [ -t 0 ]; then
+log "Waiting for passwords..."
 
-    log "Interactive terminal detected."
-
-    read -r -s -p "Password for ${ADMIN_USER}: " ADMIN_PASSWORD
+if ! read -r -s -p "Password for ${ADMIN_USER}: " ADMIN_PASSWORD </dev/tty; then
     echo
-
-    if [ -z "$ADMIN_PASSWORD" ]; then
-        log "ERROR: password for ${ADMIN_USER} cannot be empty."
-        exit 1
-    fi
-
-    read -r -s -p "Password for ${APP_USER}: " APP_PASSWORD
-    echo
-
-    if [ -z "$APP_PASSWORD" ]; then
-        log "ERROR: password for ${APP_USER} cannot be empty."
-        exit 1
-    fi
-
-else
-
-    log "No interactive terminal detected."
-    log "Using POSTGRES_ADMIN_PASSWORD for PostgreSQL admin connection."
-
-    # Для автоматического запуска пока генерируем/получаем пароль
-    # приложения отдельно.
-    read -r -s -p "Password for ${ADMIN_USER}: " ADMIN_PASSWORD </dev/tty
-    echo
-
-    read -r -s -p "Password for ${APP_USER}: " APP_PASSWORD </dev/tty
-    echo
-
+    log "ERROR: failed to read password for ${ADMIN_USER}."
+    log "Make sure the container is started with stdin_open=true and tty=true."
+    exit 1
 fi
+
+echo
+
+if [ -z "$ADMIN_PASSWORD" ]; then
+    log "ERROR: password for ${ADMIN_USER} cannot be empty."
+    exit 1
+fi
+
+log "Password for ${ADMIN_USER} received."
+
+if ! read -r -s -p "Password for ${APP_USER}: " APP_PASSWORD </dev/tty; then
+    echo
+    log "ERROR: failed to read password for ${APP_USER}."
+    exit 1
+fi
+
+echo
+
+if [ -z "$APP_PASSWORD" ]; then
+    log "ERROR: password for ${APP_USER} cannot be empty."
+    exit 1
+fi
+
+log "Password for ${APP_USER} received."
 
 log "Passwords received. Password values are hidden."
 
