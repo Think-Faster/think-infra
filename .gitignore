@@ -2,3 +2,4 @@ samba/.env
 samba/data
 hashicorp/.env
 postgree/.env
+postgree/.env.schemas

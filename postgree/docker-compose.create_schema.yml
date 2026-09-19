@@ -6,13 +6,12 @@ services:
 
     container_name: tf-create-schema
 
-    environment:
-      POSTGRES_HOST: tf-postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: tf
-      POSTGRES_ADMIN_USER: tf
-      POSTGRES_ADMIN_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    env_file:
+      - .env.schemas
 
+    networks:
+      - app-network
+      
     volumes:
       - ./db/schemas.conf:/app/schemas.conf:ro
 
@@ -20,3 +19,7 @@ services:
     tty: true
 
     restart: "no"
+
+networks:
+  app-network:
+    driver: bridge
