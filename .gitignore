@@ -1,2 +1,3 @@
 samba/.env
 samba/data
+hashicorp/.env
