@@ -1,3 +1,5 @@
+name: tf-kafka
+
 services:
 
   tf-kafka:
