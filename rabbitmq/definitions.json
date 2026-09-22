@@ -1,0 +1,149 @@
+{
+  "vhosts": [
+    {
+      "name": "tf",
+      "metadata": {
+        "description": "Think Faster: команды модели и уведомления",
+        "default_queue_type": "quorum"
+      }
+    }
+  ],
+
+  "exchanges": [
+    {
+      "name": "tf.model.commands",
+      "vhost": "tf",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "tf.notifications",
+      "vhost": "tf",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "tf.dlx",
+      "vhost": "tf",
+      "type": "fanout",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+
+  "queues": [
+    {
+      "name": "tf.model.commands",
+      "vhost": "tf",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum" }
+    },
+    {
+      "name": "tf.notify.email",
+      "vhost": "tf",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum" }
+    },
+    {
+      "name": "tf.notify.telegram",
+      "vhost": "tf",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum" }
+    },
+    {
+      "name": "tf.dlq",
+      "vhost": "tf",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum" }
+    }
+  ],
+
+  "bindings": [
+    {
+      "source": "tf.model.commands",
+      "vhost": "tf",
+      "destination": "tf.model.commands",
+      "destination_type": "queue",
+      "routing_key": "#",
+      "arguments": {}
+    },
+    {
+      "source": "tf.notifications",
+      "vhost": "tf",
+      "destination": "tf.notify.email",
+      "destination_type": "queue",
+      "routing_key": "email",
+      "arguments": {}
+    },
+    {
+      "source": "tf.notifications",
+      "vhost": "tf",
+      "destination": "tf.notify.telegram",
+      "destination_type": "queue",
+      "routing_key": "telegram",
+      "arguments": {}
+    },
+    {
+      "source": "tf.dlx",
+      "vhost": "tf",
+      "destination": "tf.dlq",
+      "destination_type": "queue",
+      "routing_key": "",
+      "arguments": {}
+    }
+  ],
+
+  "policies": [
+    {
+      "vhost": "tf",
+      "name": "tf-model-commands",
+      "pattern": "^tf\\.model\\.commands$",
+      "apply-to": "queues",
+      "priority": 10,
+      "definition": {
+        "dead-letter-exchange": "tf.dlx",
+        "message-ttl": 3600000,
+        "max-length": 10000,
+        "overflow": "drop-head",
+        "delivery-limit": 5
+      }
+    },
+    {
+      "vhost": "tf",
+      "name": "tf-notify",
+      "pattern": "^tf\\.notify\\.",
+      "apply-to": "queues",
+      "priority": 10,
+      "definition": {
+        "dead-letter-exchange": "tf.dlx",
+        "message-ttl": 86400000,
+        "max-length": 10000,
+        "overflow": "drop-head",
+        "delivery-limit": 5
+      }
+    },
+    {
+      "vhost": "tf",
+      "name": "tf-dlq",
+      "pattern": "^tf\\.dlq$",
+      "apply-to": "queues",
+      "priority": 10,
+      "definition": {
+        "max-length": 100000,
+        "overflow": "drop-head"
+      }
+    }
+  ]
+}
