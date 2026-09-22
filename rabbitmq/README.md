@@ -203,6 +203,36 @@ docker exec tf-rabbit rabbitmqctl delete_user <имя>
 docker exec tf-rabbit rabbitmqctl purge_queue -p tf tf.dlq
 ```
 
+## Как посмотреть сообщения в очереди
+
+### Сколько сообщений лежит
+
+```bash
+docker exec tf-rabbit rabbitmqctl list_queues -p tf name messages_ready messages_unacknowledged
+```
+
+| Колонка | Что значит |
+|---|---|
+| `messages_ready` | ждут потребителя |
+| `messages_unacknowledged` | выданы потребителю, но ещё не подтверждены (`ack`) |
+
+Пример: после `smoke-test publish` у `tf.notify.email` должно быть `messages_ready = 1`,
+после `smoke-test check` — `0`, а у `tf.dlq` на время проверки — `1`.
+
+### Что внутри сообщения
+
+Через management UI (как открыть — раздел «Management UI»):
+**Queues and Streams** → нужная очередь → блок **Get messages**.
+
+- **Ack mode: Nack message requeue true** — посмотреть и вернуть сообщение в очередь.
+  У quorum-очереди это засчитывается как попытка доставки: после 5 таких просмотров
+  (`delivery-limit`) сообщение уйдёт в `tf.dlq`. Для рабочих очередей смотрите осторожно.
+- **Ack mode: Automatic ack** — забрать сообщение из очереди насовсем (удобно для разбора `tf.dlq`).
+
+У сообщения из `tf.dlq` в заголовке `x-death` видно, откуда оно пришло (`queue`) и почему
+(`reason`: `rejected` — отклонено потребителем, `delivery_limit` — исчерпаны повторы,
+`expired` — истёк TTL, `maxlen` — очередь переполнена).
+
 ## Ограничения одного узла
 
 - Quorum-очереди на одном узле не дают отказоустойчивости: пока узел перезапускается, публикация
