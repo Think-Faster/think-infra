@@ -1,0 +1,5 @@
+# Скрипты и конфиги монтируются в Linux-контейнер: строго LF
+*.sh   text eol=lf
+*.py   text eol=lf
+*.conf text eol=lf
+*.json text eol=lf

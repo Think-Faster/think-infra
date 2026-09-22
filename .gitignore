@@ -4,3 +4,4 @@ hashicorp/.env
 postgree/.env
 postgree/.env.schemas
 kafka/.env
+rabbitmq/.env

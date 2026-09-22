@@ -1,0 +1,119 @@
+name: tf-rabbit
+
+services:
+
+  tf-rabbit:
+    container_name: tf-rabbit
+
+    # RabbitMQ хранит данные в каталоге с именем узла rabbit@<hostname>.
+    # Без фиксированного hostname после пересоздания контейнера узел "забудет" очереди.
+    hostname: tf-rabbit
+
+    image: rabbitmq:4.1-management-alpine
+
+    environment:
+      # Администратор создаётся при первом старте пустого тома. guest при этом не создаётся.
+      # Смена пароля в .env после первого запуска НЕ меняет пароль admin (см. README).
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: ${TF_RABBIT_ADMIN_PASSWORD:?TF_RABBIT_ADMIN_PASSWORD is not set}
+      RABBITMQ_DEFAULT_VHOST: tf
+
+      # Отключает активное ожидание планировщиков Erlang: без этого узел
+      # в простое заметно грузит процессор.
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: +sbwt none +sbwtdcpu none +sbwtdio none
+
+    # Порты AMQP (5672) и management (15672) на хост НЕ публикуются.
+
+    volumes:
+      - rabbit-data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/20-tf.conf:ro
+
+    networks:
+      - think-fast-net
+
+    # Узел отвечает и нет алармов по памяти и диску.
+    # Один HTTP-запрос через wget из busybox - без запуска Erlang CLI.
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://admin:$${RABBITMQ_DEFAULT_PASS}@127.0.0.1:15672/api/health/checks/local-alarms"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 5s
+
+    # Потолок памяти контейнера. RabbitMQ видит лимит и ставит аларм на 60% от него.
+    mem_limit: 1g
+
+    restart: unless-stopped
+
+
+  # Одноразовый контейнер: загружает топологию и пользователей и завершается.
+  tf-rabbit-init:
+    container_name: tf-rabbit-init
+
+    image: curlimages/curl:8.11.1
+
+    entrypoint: ["sh", "/opt/tf/init.sh"]
+
+    environment:
+      TF_RABBIT_ADMIN_PASSWORD: ${TF_RABBIT_ADMIN_PASSWORD:?TF_RABBIT_ADMIN_PASSWORD is not set}
+      TF_RABBIT_BFF_PASSWORD: ${TF_RABBIT_BFF_PASSWORD:?TF_RABBIT_BFF_PASSWORD is not set}
+      TF_RABBIT_MODEL_PASSWORD: ${TF_RABBIT_MODEL_PASSWORD:?TF_RABBIT_MODEL_PASSWORD is not set}
+      TF_RABBIT_EMAIL_PASSWORD: ${TF_RABBIT_EMAIL_PASSWORD:?TF_RABBIT_EMAIL_PASSWORD is not set}
+      TF_RABBIT_TELEGRAM_PASSWORD: ${TF_RABBIT_TELEGRAM_PASSWORD:?TF_RABBIT_TELEGRAM_PASSWORD is not set}
+
+    volumes:
+      - ./scripts:/opt/tf:ro
+      - ./definitions.json:/etc/tf/definitions.json:ro
+      - ./users.conf:/etc/tf/users.conf:ro
+
+    networks:
+      - think-fast-net
+
+    depends_on:
+      tf-rabbit:
+        condition: service_healthy
+
+    restart: "no"
+
+
+  # Проверка критериев приёмки. Не стартует при `docker compose up`,
+  # запускается вручную: docker compose run --rm tf-rabbit-smoke <команда>
+  tf-rabbit-smoke:
+    profiles: ["test"]
+
+    image: python:3.12-alpine
+
+    entrypoint:
+      [
+        "sh", "-c",
+        "pip install -q --disable-pip-version-check --root-user-action=ignore pika==1.3.2 && python /opt/tf/smoke-test.py \"$$@\"",
+        "--"
+      ]
+
+    environment:
+      TF_RABBIT_ADMIN_PASSWORD: ${TF_RABBIT_ADMIN_PASSWORD:?TF_RABBIT_ADMIN_PASSWORD is not set}
+      TF_RABBIT_BFF_PASSWORD: ${TF_RABBIT_BFF_PASSWORD:?TF_RABBIT_BFF_PASSWORD is not set}
+      TF_RABBIT_MODEL_PASSWORD: ${TF_RABBIT_MODEL_PASSWORD:?TF_RABBIT_MODEL_PASSWORD is not set}
+      TF_RABBIT_EMAIL_PASSWORD: ${TF_RABBIT_EMAIL_PASSWORD:?TF_RABBIT_EMAIL_PASSWORD is not set}
+
+    volumes:
+      - ./scripts:/opt/tf:ro
+
+    networks:
+      - think-fast-net
+
+
+volumes:
+
+  rabbit-data:
+    name: tf-rabbit-data
+
+
+networks:
+  think-fast-net:
+    external: true
