@@ -1,0 +1,120 @@
+services:
+
+  tf-kafka:
+    container_name: tf-kafka
+
+    image: apache/kafka:4.0.0
+
+    # Один узел KRaft: broker и controller в одном процессе, ZooKeeper не нужен.
+    # Переменные KAFKA_* образ превращает в server.properties:
+    # KAFKA_FOO_BAR -> foo.bar (двойное подчёркивание -> "_", тройное -> "-").
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:?KAFKA_CLUSTER_ID is not set}
+
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+
+      # INTERNAL  - единственный клиентский listener, виден только в think-fast-net.
+      # CONTROLLER - служебный, слушает только localhost внутри контейнера.
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,CONTROLLER://localhost:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://tf-kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+
+      # Аутентификация SASL/PLAIN: по учётке на каждый сервис.
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      KAFKA_LISTENER_NAME_INTERNAL_PLAIN_SASL_JAAS_CONFIG: >-
+        org.apache.kafka.common.security.plain.PlainLoginModule required
+        username="admin"
+        password="${TF_KAFKA_ADMIN_PASSWORD}"
+        user_admin="${TF_KAFKA_ADMIN_PASSWORD}"
+        user_tf-funnel="${TF_KAFKA_FUNNEL_PASSWORD}"
+        user_tf-model="${TF_KAFKA_MODEL_PASSWORD}"
+        user_tf-bff="${TF_KAFKA_BFF_PASSWORD}";
+
+      # Авторизация по ACL. Всё, что не разрешено явно в acls.conf, запрещено.
+      # ANONYMOUS - это сам брокер на CONTROLLER-listener (доступен только с localhost).
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+      KAFKA_SUPER_USERS: User:admin;User:ANONYMOUS
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
+
+      # Топики создаёт только tf-kafka-init из topics.conf.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+      # Один брокер: реплика всегда одна.
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+      # Максимальный размер сообщения (батча) - 1 МБ.
+      KAFKA_MESSAGE_MAX_BYTES: 1048576
+
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+
+      # Пароли для служебных скриптов (healthcheck, smoke-test).
+      TF_KAFKA_ADMIN_PASSWORD: ${TF_KAFKA_ADMIN_PASSWORD:?TF_KAFKA_ADMIN_PASSWORD is not set}
+      TF_KAFKA_FUNNEL_PASSWORD: ${TF_KAFKA_FUNNEL_PASSWORD:?TF_KAFKA_FUNNEL_PASSWORD is not set}
+      TF_KAFKA_MODEL_PASSWORD: ${TF_KAFKA_MODEL_PASSWORD:?TF_KAFKA_MODEL_PASSWORD is not set}
+      TF_KAFKA_BFF_PASSWORD: ${TF_KAFKA_BFF_PASSWORD:?TF_KAFKA_BFF_PASSWORD is not set}
+
+    # Порты на хост НЕ публикуются.
+
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+      - ./scripts:/opt/tf:ro
+
+    networks:
+      - think-fast-net
+
+    # Брокер отвечает по INTERNAL-listener и знает лидера контроллера.
+    healthcheck:
+      test: ["CMD", "bash", "/opt/tf/healthcheck.sh"]
+      interval: 15s
+      timeout: 20s
+      retries: 5
+      start_period: 30s
+
+    restart: unless-stopped
+
+
+  # Одноразовый контейнер: создаёт топики и ACL и завершается.
+  tf-kafka-init:
+    container_name: tf-kafka-init
+
+    image: apache/kafka:4.0.0
+
+    entrypoint: ["bash", "/opt/tf/init.sh"]
+
+    environment:
+      TF_KAFKA_ADMIN_PASSWORD: ${TF_KAFKA_ADMIN_PASSWORD:?TF_KAFKA_ADMIN_PASSWORD is not set}
+
+    volumes:
+      - ./scripts:/opt/tf:ro
+      - ./topics.conf:/etc/tf/topics.conf:ro
+      - ./acls.conf:/etc/tf/acls.conf:ro
+
+    networks:
+      - think-fast-net
+
+    depends_on:
+      tf-kafka:
+        condition: service_healthy
+
+    restart: "no"
+
+
+volumes:
+
+  kafka-data:
+    name: tf-kafka-data
+
+
+networks:
+  think-fast-net:
+    external: true
