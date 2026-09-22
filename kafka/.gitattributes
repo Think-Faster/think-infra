@@ -1,0 +1,3 @@
+# Скрипты монтируются в Linux-контейнер: строго LF
+*.sh   text eol=lf
+*.conf text eol=lf
