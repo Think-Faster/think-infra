@@ -59,6 +59,9 @@ services:
 
       KAFKA_LOG_DIRS: /var/lib/kafka/data
 
+      # Куча JVM брокера. Для нашей нагрузки 512 МБ достаточно (по умолчанию 1 ГБ).
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx512m
+
       # Пароли для служебных скриптов (healthcheck, smoke-test).
       TF_KAFKA_ADMIN_PASSWORD: ${TF_KAFKA_ADMIN_PASSWORD:?TF_KAFKA_ADMIN_PASSWORD is not set}
       TF_KAFKA_FUNNEL_PASSWORD: ${TF_KAFKA_FUNNEL_PASSWORD:?TF_KAFKA_FUNNEL_PASSWORD is not set}
@@ -75,12 +78,18 @@ services:
       - think-fast-net
 
     # Брокер отвечает по INTERNAL-listener и знает лидера контроллера.
+    # Каждая проверка - отдельный запуск JVM, поэтому в работе проверяем редко.
+    # При старте (start_period) - каждые 5 с, чтобы tf-kafka-init не ждал минуту.
     healthcheck:
       test: ["CMD", "bash", "/opt/tf/healthcheck.sh"]
-      interval: 15s
-      timeout: 20s
-      retries: 5
-      start_period: 30s
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
+      start_interval: 5s
+
+    # Потолок памяти контейнера: куча 512 МБ + метаданные JVM + запуски healthcheck.
+    mem_limit: 1g
 
     restart: unless-stopped
 
