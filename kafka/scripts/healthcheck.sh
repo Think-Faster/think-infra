@@ -4,6 +4,11 @@
 
 set -Eeuo pipefail
 
+# Проверка запускает отдельную JVM: маленькая куча и быстрый старт,
+# чтобы не отнимать процессор и память у брокера.
+export KAFKA_HEAP_OPTS="-Xms32m -Xmx64m"
+export KAFKA_JVM_PERFORMANCE_OPTS="-XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Xshare:auto"
+
 ADMIN_CONFIG="$(bash /opt/tf/client-config.sh admin)"
 
 STATUS="$(
