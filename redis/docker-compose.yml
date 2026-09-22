@@ -1,0 +1,42 @@
+services:
+
+  tf-redis:
+    container_name: tf-redis
+
+    image: redis:7-alpine
+
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+
+    volumes:
+      - redis-data:/data
+
+    networks:
+      - think-fast-net
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+    restart: unless-stopped
+
+
+volumes:
+
+  redis-data:
+    name: tf-redis-data
+
+
+networks:
+  think-fast-net:
+    external: true
