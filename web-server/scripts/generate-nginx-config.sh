@@ -33,6 +33,9 @@ required_vars=(
 
     AUTH_HOST
     AUTH_PORT
+
+    BFF_HOST
+    BFF_PORT
 )
 
 for var in "${required_vars[@]}"; do
@@ -73,7 +76,7 @@ fi
 echo "==> Generating nginx.conf..."
 
 envsubst \
-'${DOMAIN} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT}' \
+'${DOMAIN} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT}' \
 < nginx/nginx.conf.template \
 > nginx/nginx.conf
 
