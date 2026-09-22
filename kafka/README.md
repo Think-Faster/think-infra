@@ -19,10 +19,63 @@ Kafka здесь — шина потоков данных: показания, �
 
 ## Запуск
 
+### 1. Заполнить `.env`
+
 ```bash
 cd kafka
 cp .env.template .env
-# заполнить .env: KAFKA_CLUSTER_ID и четыре пароля
+```
+
+| Переменная | Что это |
+|---|---|
+| `KAFKA_CLUSTER_ID` | ID кластера KRaft. Задаётся **один раз** до первого запуска и больше не меняется |
+| `TF_KAFKA_ADMIN_PASSWORD` | Пароль суперпользователя `admin` (брокер, init, обслуживание) |
+| `TF_KAFKA_FUNNEL_PASSWORD` | Пароль пользователя `tf-funnel` |
+| `TF_KAFKA_MODEL_PASSWORD` | Пароль пользователя `tf-model` |
+| `TF_KAFKA_BFF_PASSWORD` | Пароль пользователя `tf-bff` |
+
+Сгенерировать значения:
+
+```bash
+docker run --rm apache/kafka:4.0.0 /opt/kafka/bin/kafka-storage.sh random-uuid   # KAFKA_CLUSTER_ID
+openssl rand -hex 24                                                              # каждый пароль
+```
+
+Пароли — только латиница и цифры (они подставляются в JAAS-строку в кавычках).
+Если `KAFKA_CLUSTER_ID` поменяется после первого запуска, брокер не стартует на старом томе
+(`Invalid cluster.id`), поэтому `.env` терять нельзя — см. следующий шаг.
+
+### 2. Сохранить копию `.env` в Vault
+
+`.env` не хранится в git. Чтобы не потерять секреты, копия лежит в Vault по пути
+`secret/tf/kafka`, ключи совпадают с именами переменных.
+
+Через веб-интерфейс: `http://<хост>:8200` → `secret/` → **Create secret** → путь `tf/kafka`,
+добавить пять пар «переменная — значение».
+
+Или из консоли (из папки `kafka`, контейнер Vault называется `vault`):
+
+```bash
+docker exec -e VAULT_TOKEN=<токен> -e VAULT_ADDR=http://127.0.0.1:8200 vault \
+  vault kv put secret/tf/kafka $(grep -E '^[A-Z_]+=' .env | tr -d '\r')
+```
+
+Восстановить `.env` из Vault:
+
+```bash
+for key in KAFKA_CLUSTER_ID TF_KAFKA_ADMIN_PASSWORD TF_KAFKA_FUNNEL_PASSWORD TF_KAFKA_MODEL_PASSWORD TF_KAFKA_BFF_PASSWORD; do
+  echo "$key=$(docker exec -e VAULT_TOKEN=<токен> -e VAULT_ADDR=http://127.0.0.1:8200 vault vault kv get -field=$key secret/tf/kafka)"
+done > .env
+```
+
+После смены любого пароля в `.env` — обновить копию в Vault той же командой `kv put`.
+
+> Vault запущен в dev-режиме (`server -dev`): его данные живут в памяти и пропадают при перезапуске
+> контейнера `vault`. Пока это так, Vault — не единственное место, где стоит держать `KAFKA_CLUSTER_ID`.
+
+### 3. Поднять Kafka
+
+```bash
 docker network create think-fast-net   # если сети ещё нет
 docker compose up -d
 docker compose logs -f tf-kafka-init   # итог: список созданных топиков
