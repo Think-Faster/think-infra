@@ -5,3 +5,4 @@ postgree/.env
 postgree/.env.schemas
 kafka/.env
 rabbitmq/.env
+hashicorp/backups

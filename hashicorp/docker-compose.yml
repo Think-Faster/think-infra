@@ -1,19 +1,40 @@
+name: tf-vault
+
 services:
+
   vault:
-    image: hashicorp/vault:latest
     container_name: vault
+
+    # Версия зафиксирована: обновление хранилища должно быть осознанным (сначала снапшот, см. README).
+    image: hashicorp/vault:1.20.0
+
+    # Обычный режим (не -dev): конфиг из /vault/config, данные на диске.
+    # После каждого старта Vault запечатан (sealed) — нужно распечатать ключами (см. README).
+    command: server
+
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+
     ports:
       - "8200:8200"
-    environment:
-      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
-    cap_add:
-      - IPC_LOCK
-    command: server -dev
+
     volumes:
-      - ./vault-data:/vault/data
-      - ./vault-config:/vault/config
+      - vault-data:/vault/data
+      - ./vault-config:/vault/config:ro
+
+    # healthy только когда Vault инициализирован и распечатан.
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    restart: unless-stopped
+
 
 volumes:
+
+  # Именованный том: не удаляется при docker compose down (только при down -v).
   vault-data:
-  vault-config:
-    
+    name: tf-vault-data
