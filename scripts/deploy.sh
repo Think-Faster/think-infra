@@ -198,10 +198,11 @@ deploy_redis() {
 }
 
 # Имена из DOMAIN и DOMAIN_ALIASES, которых нет в сертификате (нет сертификата — все).
+# Строка с именами у certbot 2.x — «Domains:», у новых версий — «Identifiers:».
 cert_missing_names() {
     local have name aliases="${DOMAIN_ALIASES:-}"
     have="$(docker run --rm -v "$PWD/certbot/conf:/etc/letsencrypt" certbot/certbot:latest \
-        certificates --cert-name "$DOMAIN" 2> /dev/null | sed -n 's/^ *Domains: //p' || true)"
+        certificates --cert-name "$DOMAIN" 2> /dev/null | sed -n -E 's/^ *(Domains|Identifiers): //p' || true)"
     for name in "$DOMAIN" ${aliases//,/ }; do
         [[ " $have " == *" $name "* ]] || echo "$name"
     done
