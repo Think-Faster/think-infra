@@ -185,7 +185,8 @@ docker ps
 | Строка | Что вписать | Пример |
 |---|---|---|
 | `TF_INFRA_DIR` | папка на сервере, куда ставятся программы. `~/` — ваш домашний каталог (прав sudo не нужно) | prod: `/srv/thinkfaster/tf.infra`, dev: `/home/user1/tf/think-prod` |
-| `DB_PORT` | порт базы данных на сервере. Не трогать | `5432` |
+| `DB_BIND` | с каких адресов можно зайти в базу напрямую. `127.0.0.1` — только с самого сервера (снаружи закрыто) | `127.0.0.1` |
+| `DB_PORT` | порт базы на сервере — для pgAdmin (раздел 12.8). Должен быть свободен | prod: `15432` |
 | `DOMAIN` | домен сайта, **без** `https://` и без `/` в конце | `greefob.ru` |
 | `LETSENCRYPT_EMAIL` | почта для сертификата | `admin@example.com` |
 | `DOCKER_NETWORK` | не трогать | `think-fast-net` |
@@ -594,7 +595,38 @@ docker exec -e VAULT_TOKEN='<root-токен hvs.…>' vault vault token revoke 
 history -c
 ```
 
-### 12.8. Бэкапы
+### 12.8. Зайти в базу через pgAdmin
+
+Снаружи база закрыта — pgAdmin подключается через **SSH-туннель** (встроен в pgAdmin), логинясь на сервер
+так же, как вы заходите по `ssh`.
+
+1. Пароль пользователя `tf` — на сервере (раздел 12, личный токен введён):
+
+   ```bash
+   scripts/secrets.sh get POSTGRES_PASSWORD
+   ```
+
+2. pgAdmin → правой кнопкой **Servers** → **Register** → **Server…**
+3. Вкладка **General**: Name — например `TF prod`.
+4. Вкладка **Connection**:
+   - Host name/address: `127.0.0.1`
+   - Port: значение `DB_PORT` из файла стенда (prod — `15432`)
+   - Maintenance database: `tf`
+   - Username: `tf`
+   - Password: из шага 1
+5. Вкладка **SSH Tunnel**:
+   - Use SSH tunneling: **включить**
+   - Tunnel host: IP сервера
+   - Tunnel port: `22`
+   - Username: ваш пользователь на сервере (например `grisha`)
+   - Authentication: **Password** (пароль от сервера) или **Identity file** (ваш SSH-ключ)
+6. **Save** — сервер появится слева, база `tf`, схемы `auth`, `bff`.
+
+Для просмотра данных сервиса удобнее входить не под `tf`, а под пользователем схемы
+(`auth_user` / `bff_user`, пароль — `scripts/secrets.sh get TF_PG_AUTH_USER_PASSWORD`): он не сможет случайно
+удалить таблицы.
+
+### 12.9. Бэкапы
 
 Делаются сами каждую ночь: Vault — в 03:00 (папка `<TF_INFRA_DIR>/hashicorp/backups`),
 PostgreSQL — в 04:00 (внутри Docker, том `postgree_postgres_backups`). Проверить, что задачи стоят:
@@ -615,6 +647,7 @@ crontab -l | grep tf-infra
 |---|---|---|
 | `permission denied while trying to connect to the Docker daemon` | пользователь не в группе docker | шаг 5.2 и **переподключиться** |
 | `нет прав на /opt/tf.infra` | папка принадлежит другому пользователю | шаг 7.3 |
+| `Bind for 127.0.0.1:5432 failed: port is already allocated` | порт базы на сервере занят другой программой | в файле стенда `DB_PORT` на свободный (например `15432`), закоммитить, запустить снова |
 | `tf-docker: docker compose запускается только внутри /srv/thinkfaster` | на сервере compose разрешён только в этой папке | `TF_INFRA_DIR` в файле стенда должен быть внутри `/srv/thinkfaster` (шаг 7.3) |
 | `tar: … Cannot open: File exists` или `Cannot utime: Operation not permitted` | файлы в `TF_INFRA_DIR` созданы от root | `sudo chown -R $USER <TF_INFRA_DIR>` и запустить снова |
 | `Vault запечатан (sealed)` / `Vault is sealed` | Vault перезапускался | раздел 11 |

@@ -45,7 +45,7 @@ exec приложение — видит готовые переменные о�
 
 | Что | Значение |
 |---|---|
-| PostgreSQL | хост и порт — как сейчас; база `tf`; схема `auth`; пользователи `auth_user` (приложение) / `auth_admin` (миграции) |
+| PostgreSQL | `tf-postgres:5432` (контейнер должен быть в сети `think-fast-net`); база `tf`; схема `auth`; пользователи `auth_user` (приложение) / `auth_admin` (миграции) |
 | Redis | `tf-redis:6379`, пароль обязателен (без пароля Redis закрывает соединение: `RedisConnectionException … SocketClosed`) |
 
 Контейнер должен быть в сети `think-fast-net`.
@@ -132,7 +132,7 @@ services:
 
       # $$ — чтобы docker compose не подставлял сам: в контейнер попадёт литерал ${...},
       # его заменит vault-entrypoint.sh значением из Vault.
-      ConnectionStrings__Default: "Host=<как сейчас>;Port=5432;Database=tf;Username=auth_user;Password=$${TF_PG_AUTH_USER_PASSWORD}"
+      ConnectionStrings__Default: "Host=tf-postgres;Port=5432;Database=tf;Username=auth_user;Password=$${TF_PG_AUTH_USER_PASSWORD}"
       Redis__Configuration: "tf-redis:6379,password=$${TF_REDIS_PASSWORD}"
 
 networks:

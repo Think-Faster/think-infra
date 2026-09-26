@@ -10,8 +10,11 @@ services:
       # Из Vault (secret/tf/postgres), подставляет scripts/deploy.sh.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set}
 
+    # Порт на хосте — для администрирования (pgAdmin через SSH-туннель).
+    # Адрес и порт задаются в stands/<стенд>.env: DB_BIND=127.0.0.1 — только с самого сервера,
+    # снаружи база недоступна. Сервисы подключаются не сюда, а к tf-postgres:5432 в think-fast-net.
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "${DB_BIND:-127.0.0.1}:${DB_PORT:-5432}:5432"
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -19,6 +22,8 @@ services:
 
     networks:
       - app-network
+      # Сервисы (tf-auth, tf-bff, ...) ходят в базу по имени tf-postgres:5432.
+      - think-fast-net
 
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tf -d tf"]
@@ -33,3 +38,5 @@ volumes:
 networks:
   app-network:
     driver: bridge
+  think-fast-net:
+    external: true
