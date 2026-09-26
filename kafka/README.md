@@ -47,7 +47,7 @@ scripts/secrets.sh init kafka
 
 ```bash
 docker network create think-fast-net   # если сети ещё нет
-TF_INFRA_DIR=<каталог инфраструктуры> VAULT_TOKEN=<токен> scripts/deploy.sh kafka
+TF_STAND=<dev|prod> VAULT_TOKEN=<токен> scripts/deploy.sh kafka
 ```
 
 `deploy.sh` читает секреты из Vault, поднимает `tf-kafka` и ждёт завершения `tf-kafka-init`

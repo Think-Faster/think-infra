@@ -34,6 +34,9 @@ ssh -L 8200:127.0.0.1:8200 <пользователь>@<сервер>
 
 ## Первый запуск
 
+Шаги 1–6 ниже целиком выполняет `scripts/bootstrap-stand.sh <стенд>` (см. [README.md](../README.md)).
+Здесь — что происходит внутри и как сделать то же руками.
+
 ### 1. Поднять контейнер
 
 ```bash
@@ -42,6 +45,10 @@ docker compose up -d
 ```
 
 Если остался старый контейнер `vault` в dev-режиме — сначала `docker rm -f vault`.
+
+Если контейнер падает с `open /vault/data/vault.db: permission denied` — это первая версия
+исправления (хранилище в `/vault/data`). Сейчас хранилище в `/vault/file`: пересоздать контейнер
+(`docker compose up -d`), том `tf-vault-data` подойдёт тот же.
 Файл `hashicorp/.env` (`VAULT_DEV_ROOT_TOKEN_ID`) больше не используется.
 
 ### 2. Инициализировать
@@ -138,10 +145,11 @@ VAULT_TOKEN=<токен tf-backup> sh scripts/backup.sh
 Снапшот попадает в `hashicorp/backups/` (в git не хранится), хранятся последние 14.
 Каталог стоит копировать за пределы сервера. Снапшот зашифрован — без ключей распечатывания бесполезен.
 
-Ежедневно по cron (в 03:00):
+Ежедневно в 03:00 — задачу в cron ставит `bootstrap-stand.sh`. Токен `tf-backup` лежит
+в `$TF_INFRA_DIR/hashicorp/.backup-token` (права 600), в crontab его нет:
 
 ```
-0 3 * * * cd /path/to/tf.infra/hashicorp && VAULT_TOKEN=<токен tf-backup> sh scripts/backup.sh >> backups/backup.log 2>&1
+0 3 * * * VAULT_TOKEN_FILE=<TF_INFRA_DIR>/hashicorp/.backup-token sh <TF_INFRA_DIR>/hashicorp/scripts/backup.sh >> ... # tf-infra:vault-backup
 ```
 
 ### Восстановление из снапшота
@@ -161,5 +169,5 @@ docker exec -e VAULT_TOKEN=<токен> vault vault operator raft snapshot resto
 ## Обновление версии
 
 1. Снять снапшот (`scripts/backup.sh`).
-2. Поменять тег образа в `docker-compose.yml`, `docker compose up -d`.
+2. Поменять тег образа в `docker-compose.yml`, закоммитить, на сервере: `TF_STAND=<стенд> scripts/deploy.sh hashicorp`.
 3. Распечатать.

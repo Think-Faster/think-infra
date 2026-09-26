@@ -74,6 +74,29 @@ lookup_key() {
     read -r KEY_SERVICE KEY_PATH key KEY_GENERATOR <<< "$entry"
 }
 
+# load_stand_env — экспортирует несекретные настройки из stands/$TF_STAND.env.
+# Переменная, уже заданная в окружении, не перезаписывается.
+load_stand_env() {
+    local file line key value
+    [ -n "${TF_STAND:-}" ] || die "TF_STAND не задан (dev или prod)"
+    [[ "$TF_STAND" =~ ^[a-z0-9_-]+$ ]] || die "неверное имя стенда: $TF_STAND"
+    file="$TF_ROOT/stands/$TF_STAND.env"
+    [ -f "$file" ] || die "нет настроек стенда: $file"
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+        [[ "$line" =~ ^([A-Z_][A-Z0-9_]*)=(.*)$ ]] || die "неверная строка в $file: $line"
+        key="${BASH_REMATCH[1]}"
+        value="${BASH_REMATCH[2]}"
+        # Секреты — только в Vault.
+        if manifest | awk -v key="$key" '$3 == key { found = 1 } END { exit !found }'; then
+            die "$key — секрет (secrets.conf), ему не место в $file"
+        fi
+        [ -n "${!key+x}" ] || export "$key=$value"
+    done < "$file"
+}
+
 # kv_get <путь> <КЛЮЧ> — печатает значение или завершается с ненулевым кодом.
 kv_get() {
     vault_cmd kv get -mount="$KV_MOUNT" -field="$2" "$KV_PREFIX/$1" 2> /dev/null
@@ -94,13 +117,6 @@ generate() {
     case "$1" in
         hex)
             value="$(openssl rand -hex 24)"
-            ;;
-        ad)
-            while :; do
-                value="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9')"
-                value="${value:0:32}"
-                [ "${#value}" -eq 32 ] && [[ "$value" =~ [A-Z] ]] && [[ "$value" =~ [a-z] ]] && [[ "$value" =~ [0-9] ]] && break
-            done
             ;;
         cluster-id)
             # Как kafka-storage.sh random-uuid: 16 байт в base64url без '='. Не начинается с '-'.

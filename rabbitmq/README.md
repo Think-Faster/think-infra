@@ -44,7 +44,7 @@ scripts/secrets.sh init rabbitmq
 
 ```bash
 docker network create think-fast-net   # если сети ещё нет
-TF_INFRA_DIR=<каталог инфраструктуры> VAULT_TOKEN=<токен> scripts/deploy.sh rabbitmq
+TF_STAND=<dev|prod> VAULT_TOKEN=<токен> scripts/deploy.sh rabbitmq
 ```
 
 Для ручных команд `docker compose` в папке `rabbitmq` сначала загрузить секреты в оболочку:

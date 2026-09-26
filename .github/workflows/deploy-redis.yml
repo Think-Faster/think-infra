@@ -7,6 +7,7 @@ on:
       - redis/**
       - scripts/**
       - secrets.conf
+      - stands/**
       - .github/workflows/deploy.yml
       - .github/workflows/deploy-redis.yml
   workflow_dispatch:

@@ -7,6 +7,7 @@ on:
       - postgree/**
       - scripts/**
       - secrets.conf
+      - stands/**
       - .github/workflows/deploy.yml
       - .github/workflows/deploy-postgree.yml
   workflow_dispatch:

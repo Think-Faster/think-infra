@@ -2,33 +2,39 @@
 # Выкатка одного сервиса инфраструктуры на стенд. Запускается GitHub Actions
 # на self-hosted runner стенда (.github/workflows/deploy.yml) или вручную на сервере.
 #
-#   scripts/deploy.sh <postgree|kafka|rabbitmq|redis|samba|web-server>
+#   TF_STAND=<dev|prod> scripts/deploy.sh <postgree|kafka|rabbitmq|redis|web-server|hashicorp>
+#
+# hashicorp (сам Vault) через CI не выкатывается: после перезапуска он запечатан.
+# Его выкатывает scripts/bootstrap-stand.sh или администратор вручную.
 #
 # Переменные окружения:
-#   TF_INFRA_DIR                    каталог на сервере, где живут сервисы (обязательно)
+#   TF_STAND                        стенд: настройки берутся из stands/<стенд>.env (обязательно)
 #   VAULT_ROLE_ID, VAULT_SECRET_ID  AppRole tf-deploy (так входит CI)
 #   VAULT_TOKEN                     или готовый токен (ручной запуск)
+#   Любая переменная из stands/<стенд>.env, заданная в окружении, имеет приоритет над файлом.
 #
 # Что делает:
-#   1. входит в Vault и читает секреты сервиса из secrets.conf в переменные окружения
+#   1. читает несекретные настройки стенда из stands/<стенд>.env;
+#   2. входит в Vault и читает секреты сервиса из secrets.conf в переменные окружения
 #      этого процесса (на диск не пишутся, в логах Actions маскируются);
-#   2. копирует файлы сервиса из git (HEAD) в $TF_INFRA_DIR/<сервис>, не трогая
-#      неотслеживаемые файлы: данные, сертификаты, локальный .env с несекретными настройками;
-#   3. поднимает сервис через docker compose и проверяет результат.
+#   3. копирует файлы сервиса из git (HEAD) в $TF_INFRA_DIR/<сервис>, не трогая
+#      неотслеживаемые файлы: данные, сертификаты, бэкапы;
+#   4. поднимает сервис через docker compose и проверяет результат.
 
 set -Eeuo pipefail
 
 LOG_TAG="DEPLOY"
 source "$(dirname "$0")/lib/vault.sh"
 
-SERVICE="${1:?usage: $0 <postgree|kafka|rabbitmq|redis|samba|web-server>}"
+SERVICE="${1:?usage: TF_STAND=<dev|prod> $0 <postgree|kafka|rabbitmq|redis|web-server|hashicorp>}"
 
 case "$SERVICE" in
-    postgree|kafka|rabbitmq|redis|samba|web-server) ;;
+    postgree|kafka|rabbitmq|redis|web-server|hashicorp) ;;
     *) die "неизвестный сервис: $SERVICE" ;;
 esac
 
-: "${TF_INFRA_DIR:?TF_INFRA_DIR is not set}"
+load_stand_env
+: "${TF_INFRA_DIR:?TF_INFRA_DIR is not set (stands/$TF_STAND.env)}"
 
 # Сообщения docker compose о контейнерах из другого compose-файла того же проекта
 # (postgres и create-schema) — не ошибка.
@@ -159,16 +165,36 @@ deploy_redis() {
     docker compose up -d --wait
 }
 
-deploy_samba() {
-    docker compose up -d --build --wait
-}
-
 deploy_web_server() {
-    [ -f .env ] || die "нет $PWD/.env с настройками (домен, хосты) — создать из .env.example"
+    local var
+    for var in DOMAIN LETSENCRYPT_EMAIL; do
+        [ "${!var:-CHANGE_ME}" != "CHANGE_ME" ] || die "$var не задан в stands/$TF_STAND.env"
+    done
+
+    if [ ! -f "certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
+        # Первый запуск: сертификата нет, nginx ещё не занимает порт 80.
+        log "no certificate for $DOMAIN, requesting from Let's Encrypt"
+        bash scripts/init-letsencrypt.sh
+    fi
+
     bash scripts/generate-nginx-config.sh
     docker compose up -d --wait
     docker compose exec -T nginx nginx -t
     docker compose exec -T nginx nginx -s reload
+}
+
+deploy_hashicorp() {
+    local rc=0
+    docker compose up -d
+    # Ждём, пока Vault ответит (запечатанный — тоже ответ).
+    for _ in $(seq 1 30); do
+        rc=0
+        docker exec "$VAULT_CONTAINER" vault status > /dev/null 2>&1 || rc=$?
+        [ "$rc" -ne 1 ] && break
+        sleep 2
+    done
+    [ "$rc" -ne 1 ] || die "Vault не отвечает: docker logs $VAULT_CONTAINER"
+    [ "$rc" -eq 0 ] || log "WARNING: Vault запечатан — распечатать (hashicorp/README.md)"
 }
 
 # ============================================================
@@ -178,7 +204,7 @@ deploy_web_server() {
 command -v docker > /dev/null || die "docker не установлен"
 
 log "============================================================"
-log "Deploy $SERVICE to $TF_INFRA_DIR"
+log "Deploy $SERVICE to stand $TF_STAND ($TF_INFRA_DIR)"
 log "============================================================"
 
 load_secrets

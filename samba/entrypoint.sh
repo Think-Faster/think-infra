@@ -4,8 +4,7 @@ set -e
 DOMAIN="${DOMAIN:-tf.greefob.ru}"
 REALM="${REALM:-TF.GREEFOB.RU}"
 NETBIOS="${NETBIOS:-TF}"
-# Пароль по умолчанию не задаётся: только из Vault (SAMBA_ADMIN_PASSWORD).
-: "${ADMIN_PASSWORD:?ADMIN_PASSWORD is not set}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-Admin123!}"
 
 echo "======================================"
 echo "Samba AD DC"
@@ -30,6 +29,7 @@ if [ ! -f /var/lib/samba/private/sam.ldb ]; then
         --dns-backend=SAMBA_INTERNAL \
         --adminpass="$ADMIN_PASSWORD" \
         --use-rfc2307
+        --skip-sysvolacl
 
     echo "AD provisioned."
 

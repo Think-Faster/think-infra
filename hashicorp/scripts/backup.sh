@@ -1,11 +1,15 @@
 #!/bin/sh
 # Снапшот хранилища Vault в hashicorp/backups/vault-<дата>.snap.
-# Запуск из папки hashicorp:  VAULT_TOKEN=<токен> sh scripts/backup.sh
+# Запуск:  VAULT_TOKEN=<токен> sh scripts/backup.sh
+#     или  VAULT_TOKEN_FILE=<файл с токеном> sh scripts/backup.sh   (так ставит cron bootstrap-stand.sh)
 # Токен — от `scripts/setup.sh backup-token` (политика tf-backup).
-# Для cron — см. README. Хранится последние KEEP снапшотов.
+# Хранится последние KEEP снапшотов.
 set -eu
 
-: "${VAULT_TOKEN:?VAULT_TOKEN is not set}"
+if [ -z "${VAULT_TOKEN:-}" ] && [ -n "${VAULT_TOKEN_FILE:-}" ]; then
+    VAULT_TOKEN="$(tr -d '\r\n' < "$VAULT_TOKEN_FILE")"
+fi
+: "${VAULT_TOKEN:?VAULT_TOKEN or VAULT_TOKEN_FILE is not set}"
 export VAULT_TOKEN
 KEEP="${KEEP:-14}"
 VAULT_CONTAINER="${VAULT_CONTAINER:-vault}"

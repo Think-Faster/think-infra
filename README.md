@@ -4,20 +4,65 @@
 
 | Папка | Сервис | Секреты в Vault | Выкатка |
 |---|---|---|---|
-| [hashicorp](hashicorp/README.md) | Vault — хранилище секретов | — | вручную |
-| [postgree](postgree) | PostgreSQL + создание схем | `secret/tf/postgres`, `secret/tf/postgres/<схема>` | `deploy-postgree.yml` |
+| [hashicorp](hashicorp/README.md) | Vault — хранилище секретов | — | `bootstrap-stand.sh` / вручную |
+| [postgree](postgree) | PostgreSQL + схемы сервисов | `secret/tf/postgres`, `secret/tf/postgres/<схема>` | `deploy-postgree.yml` |
 | [kafka](kafka/README.md) | Kafka (KRaft, один брокер) | `secret/tf/kafka` | `deploy-kafka.yml` |
 | [rabbitmq](rabbitmq/README.md) | RabbitMQ | `secret/tf/rabbit` | `deploy-rabbitmq.yml` |
 | [redis](redis) | Redis | `secret/tf/redis` | `deploy-redis.yml` |
-| [samba](samba) | Samba AD DC | `secret/tf/samba` | `deploy-samba.yml` |
 | [web-server](web-server) | nginx + Let's Encrypt | — | `deploy-web-server.yml` |
+
+Папка `samba` в выкатку не входит.
 
 Стенды: **dev** и **prod**. Ветки: фича → `dev` → `prod` → `master`.
 Пуш в `dev` выкатывает изменённые сервисы на dev-стенд, пуш в `prod` — на prod.
 
+## Новый стенд — одной командой
+
+На сервере (Linux, docker, docker compose v2, git, openssl), из клона репозитория на ветке стенда:
+
+```bash
+git clone <репозиторий> tf.infra && cd tf.infra && git checkout dev
+scripts/bootstrap-stand.sh dev
+```
+
+Скрипт [bootstrap-stand.sh](scripts/bootstrap-stand.sh) по шагам:
+
+1. проверяет окружение и настройки `stands/dev.env`;
+2. создаёт docker-сеть `think-fast-net`;
+3. поднимает Vault, инициализирует его и **один раз показывает ключи распечатывания и root-токен** —
+   ждёт, пока вы их сохраните (`saved`), и распечатывает;
+4. создаёт в Vault хранилище, политики и AppRole для CI;
+5. генерирует все секреты из `secrets.conf`;
+6. выкатывает postgree, redis, kafka, rabbitmq, web-server (Let's Encrypt — при первом запуске);
+7. ставит в cron ежедневные бэкапы Vault (03:00) и PostgreSQL (04:00);
+8. печатает `VAULT_ROLE_ID` / `VAULT_SECRET_ID` для GitHub и выдаёт личный токен администратора;
+9. предлагает отозвать root-токен.
+
+Каждый шаг идемпотентен: после ошибки скрипт запускается снова, готовое не трогается.
+На уже развёрнутом стенде он спросит ключ распечатывания (если Vault запечатан) и root-токен.
+
+Если DNS домена ещё не настроен — `scripts/bootstrap-stand.sh dev --skip web-server`,
+web-server выкатится потом обычным пушем.
+
+После скрипта — один раз настроить GitHub (раздел «Настройка GitHub»).
+
+## Настройки стендов
+
+Несекретные настройки — по одному файлу на стенд в git: [stands/dev.env](stands/dev.env),
+[stands/prod.env](stands/prod.env). Там каталог выкатки `TF_INFRA_DIR`, порт PostgreSQL,
+домен и адреса сервисов для nginx.
+
+Один файл на стенд, а не `.env` в каждой папке: переменных немного, стенд описан целиком
+в одном месте, изменения проходят ревью, и на сервере не остаётся локальных файлов,
+которые нужно создавать руками. Пароли в эти файлы класть нельзя — `deploy.sh` проверяет,
+что там нет ключей из `secrets.conf`.
+
+Изменить настройку — правка файла и пуш: выкатятся все сервисы стенда.
+Переменная окружения с тем же именем имеет приоритет над файлом (для ручных запусков).
+
 ## Секреты
 
-Все пароли живут **только в Vault своего стенда**. В git, в `.env` на серверах и в GitHub их нет.
+Все пароли живут **только в Vault своего стенда**. В git, в файлах на серверах и в GitHub их нет.
 В GitHub хранится только доступ CI к Vault (AppRole с правом чтения).
 
 Полный список — [secrets.conf](secrets.conf): сервис, путь в Vault, имя переменной и способ генерации.
@@ -34,7 +79,7 @@ scripts/secrets.sh status                   # что есть, чего не х�
 scripts/secrets.sh init                     # сгенерировать всё недостающее
 scripts/secrets.sh init kafka               # только для одного сервиса
 scripts/secrets.sh rotate TF_KAFKA_BFF_PASSWORD
-scripts/secrets.sh set SAMBA_ADMIN_PASSWORD # своё значение (спросит с клавиатуры)
+scripts/secrets.sh set TF_REDIS_PASSWORD    # своё значение (спросит с клавиатуры)
 scripts/secrets.sh get TF_RABBIT_BFF_PASSWORD   # передать владельцу сервиса
 eval "$(scripts/secrets.sh env rabbitmq)"   # в текущую оболочку, для ручных docker compose
 ```
@@ -57,13 +102,12 @@ eval "$(scripts/secrets.sh env rabbitmq)"   # в текущую оболочку
 | Секрет | Применяется выкаткой |
 |---|---|
 | `POSTGRES_PASSWORD` | да (`ALTER USER tf`) |
-| `TF_PG_*` | да (`create-schema` синхронизирует пароли пользователей схем) |
+| `TF_PG_*` | да (`create-schema` выставляет пароли пользователей схем) |
 | `TF_KAFKA_*_PASSWORD` | да (брокер перезапускается) |
 | `KAFKA_CLUSTER_ID` | **никогда не меняется**, `rotate` запрещён |
 | `TF_RABBIT_ADMIN_PASSWORD` | нет — сначала `rabbitmqctl change_password`, см. [rabbitmq/README.md](rabbitmq/README.md) |
 | остальные `TF_RABBIT_*` | да (`tf-rabbit-init`) |
 | `TF_REDIS_PASSWORD` | да (Redis перезапускается) |
-| `SAMBA_ADMIN_PASSWORD` | нет — только при создании домена; менять `samba-tool user setpassword Administrator` |
 
 ### Ручные команды docker compose
 
@@ -75,12 +119,38 @@ eval "$(../scripts/secrets.sh env <папка>)"
 
 Или использовать `docker logs <контейнер>` / `docker exec` — им переменные не нужны.
 
+## PostgreSQL: схемы и права
+
+Схемы перечислены в [postgree/db/schemas.conf](postgree/db/schemas.conf). Для схемы `auth`:
+
+| Роль | Кто | Что может | `search_path` |
+|---|---|---|---|
+| `auth_admin` | **миграции** | владелец схемы и всех её объектов, DDL | `auth` |
+| `auth_user` | **приложение** | `SELECT/INSERT/UPDATE/DELETE`, последовательности, функции; без DDL | `auth` |
+| `auth_maintenance`, `auth_read_write` | групповые роли (NOLOGIN) | — | — |
+
+Контейнер `create-schema` запускается при **каждой** выкатке `postgree` и приводит схемы к этому
+виду — идемпотентно, данные не трогает:
+
+- создаёт недостающие роли, выставляет пароли из Vault и `search_path`;
+- объекты схемы, созданные не `<схема>_admin` (под `tf`, через `SET ROLE`), передаёт `<схема>_admin`;
+- заново выдаёт права на все существующие объекты и права по умолчанию на будущие;
+- проверяет, что у приложения есть доступ ко всем таблицам и последовательностям, иначе падает.
+
+Правила для сервисов:
+
+- миграции — под `<схема>_admin`, приложение — под `<схема>_user`;
+- имена таблиц можно писать без схемы: `search_path` указывает на свою схему;
+- если таблица создана вручную под другим пользователем — перевыкатить `postgree`
+  (Actions → `deploy postgree` → Run workflow), права и владелец исправятся.
+
 ## Выкатка
 
 ```
 push dev/prod ─► deploy-<сервис>.yml ─► deploy.yml (self-hosted runner стенда)
                                             │
-                                            ├─ scripts/deploy.sh <сервис>
+                                            ├─ scripts/deploy.sh <сервис>   (TF_STAND = ветка)
+                                            │    ├─ настройки стенда: stands/<стенд>.env
                                             │    ├─ вход в Vault: AppRole (VAULT_ROLE_ID/SECRET_ID из GitHub Environment)
                                             │    ├─ секреты сервиса → переменные окружения процесса (маскируются в логах)
                                             │    ├─ файлы сервиса из git → $TF_INFRA_DIR/<сервис>
@@ -88,54 +158,40 @@ push dev/prod ─► deploy-<сервис>.yml ─► deploy.yml (self-hosted ru
                                             │    └─ отзыв токена Vault
 ```
 
-- Workflow срабатывает на изменения в папке сервиса, `scripts/`, `secrets.conf` и самих workflow.
+- Workflow срабатывает на изменения в папке сервиса, `scripts/`, `stands/`, `secrets.conf` и самих workflow.
   Перезапустить вручную: Actions → `deploy <сервис>` → **Run workflow** → ветка `dev` или `prod`.
-- Файлы копируются поверх `$TF_INFRA_DIR/<сервис>`: данные (`samba/data`), сертификаты
-  (`web-server/certbot`), локальный `.env` с несекретными настройками не трогаются.
-  Файлы, удалённые из git, на сервере остаются — удалить вручную.
-- Токен CI: только чтение `secret/tf/*`, живёт 15 минут, отзывается в конце выкатки.
+- Файлы копируются поверх `$TF_INFRA_DIR/<сервис>`: сертификаты (`web-server/certbot`),
+  бэкапы, токен бэкапа не трогаются. Файлы, удалённые из git, на сервере остаются — удалить вручную.
+- Vault через CI не выкатывается: после перезапуска он запечатан. Изменения `hashicorp/` —
+  вручную: `TF_STAND=<стенд> scripts/deploy.sh hashicorp`, затем распечатать.
 
 Вручную на сервере (например, если Actions недоступен):
 
 ```bash
-TF_INFRA_DIR=<каталог> VAULT_TOKEN=<токен> scripts/deploy.sh kafka
+TF_STAND=dev VAULT_TOKEN=<токен> scripts/deploy.sh kafka
 ```
 
-## Настройка стенда
+## Настройка GitHub
 
-Один раз на каждом стенде (dev, prod).
+Один раз на каждый стенд.
 
-### 1. Vault
+### Environment
 
-По [hashicorp/README.md](hashicorp/README.md): поднять, инициализировать, распечатать,
-`hashicorp/scripts/setup.sh apply`, выдать токены, отозвать root.
+Settings → Environments → создать `dev` и `prod`:
 
-### 2. Секреты
+| Что | Где | Значение |
+|---|---|---|
+| **Deployment branches** | Environment → Deployment branches and tags | `dev` — только ветка `dev`, `prod` — только `prod` |
+| `VAULT_ROLE_ID` | Environment secrets | из вывода `bootstrap-stand.sh` (или `hashicorp/scripts/setup.sh ci-credentials`) |
+| `VAULT_SECRET_ID` | Environment secrets | оттуда же |
+| Required reviewers | Environment → Protection rules | для `prod` — по желанию |
 
-Существующий стенд — **сначала перенести действующие пароли**, иначе выкатка их поменяет
-и сервисы с клиентами разъедутся:
+Ограничение по веткам обязательно: иначе workflow из любой ветки получит секреты prod.
 
-```bash
-export VAULT_TOKEN=<токен tf-admin>
-scripts/secrets.sh import <TF_INFRA_DIR>/kafka/.env kafka
-scripts/secrets.sh import <TF_INFRA_DIR>/rabbitmq/.env rabbitmq
-scripts/secrets.sh import <TF_INFRA_DIR>/postgree/.env postgree
-```
+Сменить `VAULT_SECRET_ID` (утёк, ушёл сотрудник): `hashicorp/scripts/setup.sh ci-credentials --rotate`
+отзывает все прежние и печатает новый — обновить в Environment.
 
-Пароль Samba не импортировать: значение из `.env` к домену никогда не применялось (см. ниже).
-`deploy.sh` принимает только значения из `A-Z a-z 0-9 _ -`. Если импортированный пароль
-содержит другие символы, выкатка остановится с ошибкой — тогда `scripts/secrets.sh rotate <КЛЮЧ>`.
-
-Затем сгенерировать недостающее и проверить:
-
-```bash
-scripts/secrets.sh init
-scripts/secrets.sh status
-```
-
-Новый стенд — сразу `init`.
-
-### 3. Runner
+### Runner
 
 На сервере стенда: GitHub → Settings → Actions → Runners → **New self-hosted runner** (Linux).
 При `./config.sh` добавить метку стенда:
@@ -145,54 +201,35 @@ scripts/secrets.sh status
 sudo ./svc.sh install && sudo ./svc.sh start
 ```
 
-Пользователь runner-а должен быть в группе `docker`. Нужны `git`, `bash`, `docker compose` v2.
+Пользователь runner-а должен быть в группе `docker` и иметь права на запись в `TF_INFRA_DIR`.
 
 Runner выполняет код из репозитория с доступом к docker, то есть фактически с root-правами на сервере.
 Workflow не запускаются на `pull_request`, поэтому код из форков на runner не попадает.
 
-### 4. GitHub Environment
+## Перевод существующего стенда
 
-Settings → Environments → создать `dev` и `prod`:
+Стенд, поднятый до этой схемы (пароли в `.env`, Vault в dev-режиме):
 
-| Что | Где | Значение |
-|---|---|---|
-| **Deployment branches** | Environment → Deployment branches and tags | `dev` — только ветка `dev`, `prod` — только `prod` |
-| `VAULT_ROLE_ID` | Environment secrets | из `hashicorp/scripts/setup.sh ci-credentials` |
-| `VAULT_SECRET_ID` | Environment secrets | оттуда же |
-| `TF_INFRA_DIR` | Environment variables | каталог сервисов на сервере, например `/opt/tf.infra` |
-| Required reviewers | Environment → Protection rules | для `prod` — по желанию |
+1. **Перенести действующие пароли в Vault до первой выкатки** — иначе выкатка их поменяет:
+   ```bash
+   export VAULT_TOKEN=<root или tf-admin>
+   scripts/secrets.sh import <старый каталог>/kafka/.env kafka
+   scripts/secrets.sh import <старый каталог>/rabbitmq/.env rabbitmq
+   scripts/secrets.sh import <старый каталог>/postgree/.env postgree
+   ```
+   `deploy.sh` принимает только значения из `A-Z a-z 0-9 _ -`. Если импортированный пароль
+   содержит другие символы, выкатка остановится с ошибкой — тогда `scripts/secrets.sh rotate <КЛЮЧ>`.
+2. `TF_INFRA_DIR` в `stands/<стенд>.env` — каталог, где сервисы запущены сейчас (там сертификаты
+   web-server). Тома данных от каталога не зависят: у kafka, rabbitmq, redis, vault имена заданы явно,
+   у postgres — по имени папки `postgree`.
+3. `scripts/bootstrap-stand.sh <стенд>` — доделает остальное. Старые `.env` с паролями после этого удалить.
 
-Ограничение по веткам обязательно: иначе workflow из любой ветки получит секреты prod.
+На что обратить внимание:
 
-Сменить `VAULT_SECRET_ID` (утёк, ушёл сотрудник): `hashicorp/scripts/setup.sh ci-credentials --rotate`
-отзывает все прежние и печатает новый — обновить в Environment.
-
-### 5. Несекретные настройки
-
-Остаются в локальных `.env` на сервере (в git их нет, выкатка их не трогает):
-
-| Файл | Переменные |
-|---|---|
-| `$TF_INFRA_DIR/web-server/.env` | `DOMAIN`, `LETSENCRYPT_EMAIL`, хосты и порты (шаблон — `.env.example`) |
-| `$TF_INFRA_DIR/samba/.env` | `SAMBA_DOMAIN`, `SAMBA_REALM`, `SAMBA_NETBIOS` |
-| `$TF_INFRA_DIR/postgree/.env` | `DB_PORT` (по умолчанию 5432) |
-
-Пароли из этих файлов после переноса в Vault удалить. Файлы `hashicorp/.env`, `postgree/.env.schemas`,
-`kafka/.env`, `rabbitmq/.env` больше не нужны.
-
-## Миграция существующего стенда: на что обратить внимание
-
-- **`TF_INFRA_DIR` — это каталог, где сервисы запущены сейчас.** Имя проекта compose берётся
-  из имени папки (`postgree`), а `samba/data` и сертификаты лежат рядом с compose-файлом.
-  Другой каталог = новые пустые тома и новый домен Samba.
 - **Пароли схем Postgres поменяются.** Раньше пароль совпадал с именем пользователя
   (`auth_user` / `auth_user`). Первая выкатка `postgree` выставит пароли из Vault —
   до неё передать новые пароли сервисам auth и bff (`scripts/secrets.sh get TF_PG_AUTH_USER_PASSWORD`).
 - **У Redis появился пароль.** Клиенты (bff и др.) без пароля перестанут подключаться после выкатки `redis`.
-- **Samba.** Раньше compose читал `DOMAIN`/`ADMIN_PASSWORD`, а в `.env` были `SAMBA_*`, поэтому домен
-  создан с паролем по умолчанию из `entrypoint.sh`. Новый пароль к существующему домену не применяется —
-  сменить вручную на значение из Vault:
-  ```bash
-  docker exec -it samba-ad samba-tool user setpassword Administrator --newpassword="$(scripts/secrets.sh get SAMBA_ADMIN_PASSWORD)"
-  ```
 - **Vault слушает только localhost.** Веб-интерфейс — через SSH-туннель (см. hashicorp/README.md).
+- **Старый cron бэкапа PostgreSQL** (`postgree/cron-control.sh`, путь `/opt/tf`) заменён задачей,
+  которую ставит `bootstrap-stand.sh`. Старую запись удалить: `crontab -e`.

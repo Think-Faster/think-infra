@@ -7,6 +7,7 @@ on:
       - rabbitmq/**
       - scripts/**
       - secrets.conf
+      - stands/**
       - .github/workflows/deploy.yml
       - .github/workflows/deploy-rabbitmq.yml
   workflow_dispatch:

@@ -2,9 +2,9 @@
 #
 # Стенд = ветка: пуш в dev выкатывает на dev, пуш в prod — на prod.
 # На каждом стенде стоит self-hosted runner с меткой стенда (dev / prod) и доступом к docker.
-# Секреты AppRole — в GitHub Environment с именем стенда (Settings → Environments):
-#   VAULT_ROLE_ID, VAULT_SECRET_ID  (secrets)
-#   TF_INFRA_DIR                    (variables) — каталог инфраструктуры на сервере
+# Несекретные настройки стенда — stands/<стенд>.env в репозитории.
+# В GitHub Environment с именем стенда (Settings → Environments) только доступ к Vault:
+#   VAULT_ROLE_ID, VAULT_SECRET_ID  (Environment secrets)
 # Порядок настройки — README.md, раздел «Выкатка».
 
 name: deploy
@@ -13,7 +13,7 @@ on:
   workflow_call:
     inputs:
       service:
-        description: Папка сервиса (postgree, kafka, rabbitmq, redis, samba, web-server)
+        description: Папка сервиса (postgree, kafka, rabbitmq, redis, web-server)
         required: true
         type: string
 
@@ -43,6 +43,6 @@ jobs:
       - name: Deploy ${{ inputs.service }}
         run: bash scripts/deploy.sh "${{ inputs.service }}"
         env:
-          TF_INFRA_DIR: ${{ vars.TF_INFRA_DIR }}
+          TF_STAND: ${{ github.ref_name }}
           VAULT_ROLE_ID: ${{ secrets.VAULT_ROLE_ID }}
           VAULT_SECRET_ID: ${{ secrets.VAULT_SECRET_ID }}
