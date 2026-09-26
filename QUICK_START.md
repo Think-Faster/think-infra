@@ -189,6 +189,7 @@ docker ps
 | `DB_PORT` | порт базы на сервере — для pgAdmin (раздел 12.8). Должен быть свободен | prod: `15432` |
 | `DOMAIN` | домен сайта, **без** `https://` и без `/` в конце | `greefob.ru` |
 | `LETSENCRYPT_EMAIL` | почта для сертификата | `admin@example.com` |
+| `DOMAIN_ALIASES` | другие имена сайта через запятую, например `www.`-вариант. Попадают в сертификат и в nginx; новое имя добавляется в сертификат при следующей выкатке web-server. Не задан — только `DOMAIN` | prod: `www.thinkfaster.ru` |
 | `WEB_BIND` | на каком адресе сервера сайт слушает 80 и 443. Не задан — на всех. Публичный IP — если 80 или 443 на другом адресе занят другой программой | prod: `45.87.41.186` |
 | `DOCKER_NETWORK` | не трогать | `think-fast-net` |
 | `FRONTEND_HOST`, `FRONTEND_PORT` | имя контейнера сайта и его порт | `tf-front`, `80` |
@@ -659,6 +660,8 @@ crontab -l | grep tf-infra
 | `DOMAIN не задан в stands/…` | не заполнен файл стенда | раздел 6, или запуск с `--skip web-server` |
 | `Port 80 is already in use` | сертификата нет, а порт 80 занят (старый nginx или другая программа) | проверить `DOMAIN` в файле стенда; остановить то, что занимает порт 80 |
 | Сертификат не выпускается (`Certbot failed…`) | DNS домена не указывает на сервер | шаг 6.3, подождать, запустить снова |
+| `Certificate not found` сразу после выпуска | `live/` и `archive/` доступны только root, выкатка идёт не от root | `init-letsencrypt.sh` сам ставит 750; для старого сертификата — `docker run --rm --entrypoint chmod -v "$PWD/certbot/conf:/etc/letsencrypt" certbot/certbot 750 /etc/letsencrypt/live /etc/letsencrypt/archive` в папке web-server |
+| Сертификат истекает | не работает `tf-certbot` (продлевает дважды в сутки) | `docker logs tf-certbot`; выкатить web-server заново |
 | Сайт: **502 Bad Gateway** | сервис за nginx не запущен или порт указан неверно | `docker ps` — есть ли `tf-auth` / `tf-bff` / `tf-front`; сверить `*_PORT` в файле стенда |
 | В логе сервиса `RedisConnectionException … SocketClosed` / `NOAUTH` | сервис подключается к Redis без пароля | сервис должен брать пароль из Vault (ТЗ в `docs/vault-tz/`) |
 | В логе сервиса `Vault недоступен, запечатан или неверный VAULT_ROLE_ID/VAULT_SECRET_ID` | Vault запечатан или в GitHub неверные значения | раздел 11; проверить секреты сервиса в GitHub (10.3) |
