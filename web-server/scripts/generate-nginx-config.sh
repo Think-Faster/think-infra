@@ -8,16 +8,14 @@ cd "$(dirname "$0")/.."
 # Load environment
 # ==================================================
 
-if [ ! -f .env ]; then
-    echo "ERROR: .env file not found."
-    echo "Create it first:"
-    echo "  cp .env.example .env"
-    exit 1
-fi
+# Переменные задаёт scripts/deploy.sh из stands/<стенд>.env.
+# Для ручного запуска можно положить их в web-server/.env.
 
-set -a
-source .env
-set +a
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+fi
 
 
 # ==================================================
@@ -40,7 +38,7 @@ required_vars=(
 
 for var in "${required_vars[@]}"; do
     if [ -z "${!var:-}" ]; then
-        echo "ERROR: Required variable '$var' is not set."
+        echo "ERROR: Required variable '$var' is not set (stands/<стенд>.env)."
         exit 1
     fi
 done
@@ -75,10 +73,19 @@ fi
 
 echo "==> Generating nginx.conf..."
 
-envsubst \
-'${DOMAIN} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT}' \
-< nginx/nginx.conf.template \
-> nginx/nginx.conf
+# envsubst берётся из образа nginx: на хосте gettext может не быть.
+# Подставляются только перечисленные переменные, $host и т.п. остаются для nginx.
+# Пишем через временный файл: nginx.conf смонтирован в контейнер, частичный файл ему не нужен.
+docker run --rm -i \
+    -e DOMAIN -e FRONTEND_HOST -e FRONTEND_PORT -e AUTH_HOST -e AUTH_PORT -e BFF_HOST -e BFF_PORT \
+    nginx:1.29-alpine \
+    envsubst '${DOMAIN} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT}' \
+    < nginx/nginx.conf.template \
+    > nginx/nginx.conf.tmp
+
+# cat, а не mv: сохраняем inode файла, смонтированного в работающий контейнер.
+cat nginx/nginx.conf.tmp > nginx/nginx.conf
+rm -f nginx/nginx.conf.tmp
 
 
 echo "==> nginx.conf generated successfully."

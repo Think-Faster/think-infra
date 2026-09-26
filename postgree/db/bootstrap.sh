@@ -78,6 +78,21 @@ if [[ ! "$SCHEMA_NAME" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
     exit 1
 fi
 
+# Пароли пользователей схемы — из Vault (secrets.conf), передаёт scripts/deploy.sh:
+#   auth -> TF_PG_AUTH_ADMIN_PASSWORD, TF_PG_AUTH_USER_PASSWORD
+
+ADMIN_PASSWORD_VAR="TF_PG_${SCHEMA_NAME^^}_ADMIN_PASSWORD"
+APP_PASSWORD_VAR="TF_PG_${SCHEMA_NAME^^}_USER_PASSWORD"
+
+ADMIN_PASSWORD="${!ADMIN_PASSWORD_VAR:-}"
+APP_PASSWORD="${!APP_PASSWORD_VAR:-}"
+
+if [ -z "$ADMIN_PASSWORD" ] || [ -z "$APP_PASSWORD" ]; then
+    log "ERROR: $ADMIN_PASSWORD_VAR or $APP_PASSWORD_VAR is empty."
+    log "Add them to secrets.conf and run scripts/secrets.sh init postgree."
+    exit 1
+fi
+
 log "Configuration is valid."
 
 # ============================================================
@@ -175,70 +190,24 @@ sed 's/^/[PSQL] /' "$CONNECTION_TEST_FILE"
 rm -f "$CONNECTION_TEST_FILE"
 
 # ============================================================
-# Check schema existence
+# Apply schema, roles and permissions
 # ============================================================
-
-log "Checking whether schema '$SCHEMA_NAME' already exists..."
-
-SCHEMA_EXISTS=$(
-    PGPASSWORD="$POSTGRES_ADMIN_PASSWORD" \
-    psql \
-        -h "$POSTGRES_HOST" \
-        -p "$POSTGRES_PORT" \
-        -U "$POSTGRES_ADMIN_USER" \
-        -d "$POSTGRES_DB" \
-        -tAc \
-        "SELECT 1 FROM pg_namespace WHERE nspname = '$SCHEMA_NAME';"
-)
-
-SCHEMA_EXISTS="$(echo "$SCHEMA_EXISTS" | xargs)"
-
-if [ "$SCHEMA_EXISTS" = "1" ]; then
-    log "Schema '$SCHEMA_NAME' already exists."
-    log "Existing schema will NOT be modified."
-    log "Existing roles and permissions will NOT be modified."
-    log "Skipping."
-
-    unset POSTGRES_ADMIN_PASSWORD
-
-    exit 0
-fi
-
-log "Schema '$SCHEMA_NAME' does not exist."
-log "Proceeding with creation."
-
-# ============================================================
-# Initial passwords for new users
-# ============================================================
-
-log "============================================================"
-log "Preparing passwords for new users"
-log "============================================================"
-
-# Initial passwords are intentionally equal to usernames.
 #
-# Example:
+# Выполняется при КАЖДОМ запуске и приводит схему к эталону — идемпотентно:
+#   - роли и пользователи создаются, если их нет; пароли — из Vault;
+#   - search_path пользователей = своя схема (миграции и запросы без явной схемы);
+#   - все объекты схемы принадлежат <schema>_admin (если кто-то создал таблицу
+#     под другой ролью — например tf или через SET ROLE — владелец исправляется);
+#   - права на все существующие объекты выдаются заново;
+#   - права по умолчанию на будущие объекты <schema>_admin.
 #
-#   auth_admin -> password "auth_admin"
-#   auth_user  -> password "auth_user"
-#
-# These passwords should be changed after initial deployment.
-
-ADMIN_PASSWORD="$ADMIN_USER"
-APP_PASSWORD="$APP_USER"
-
-log "Initial password for '$ADMIN_USER' = username."
-log "Initial password for '$APP_USER' = username."
-
-# ============================================================
-# Create PostgreSQL objects
+# Миграции должны выполняться под <schema>_admin. Приложение работает под <schema>_user
+# и не может менять структуру (CREATE/ALTER/DROP).
 # ============================================================
 
 log "============================================================"
-log "Creating new schema: $SCHEMA_NAME"
+log "Applying schema: $SCHEMA_NAME"
 log "============================================================"
-
-log "Starting PostgreSQL transaction..."
 
 PGPASSWORD="$POSTGRES_ADMIN_PASSWORD" \
 psql \
@@ -246,7 +215,9 @@ psql \
     -p "$POSTGRES_PORT" \
     -U "$POSTGRES_ADMIN_USER" \
     -d "$POSTGRES_DB" \
+    -q \
     -v ON_ERROR_STOP=1 \
+    -v db_name="$POSTGRES_DB" \
     -v schema_name="$SCHEMA_NAME" \
     -v maintenance_role="$MAINTENANCE_ROLE" \
     -v read_write_role="$READ_WRITE_ROLE" \
@@ -258,148 +229,151 @@ psql \
 
 BEGIN;
 
-\echo ''
-\echo '[SQL] Creating maintenance role...'
+-- Без NOTICE "already exists" / "already been granted" при повторных запусках.
+SET LOCAL client_min_messages = warning;
 
-CREATE ROLE :"maintenance_role"
-    NOLOGIN;
+\echo '[SQL] Roles and users...'
 
-\echo '[SQL] Creating read/write role...'
+SELECT format('CREATE ROLE %I NOLOGIN', :'maintenance_role')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'maintenance_role') \gexec
 
-CREATE ROLE :"read_write_role"
-    NOLOGIN;
+SELECT format('CREATE ROLE %I NOLOGIN', :'read_write_role')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'read_write_role') \gexec
 
-\echo '[SQL] Creating admin user...'
+SELECT format('CREATE ROLE %I LOGIN', :'admin_user')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'admin_user') \gexec
 
-CREATE ROLE :"admin_user"
-    LOGIN
-    PASSWORD :'admin_password';
+SELECT format('CREATE ROLE %I LOGIN', :'app_user')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'app_user') \gexec
 
-\echo '[SQL] Creating application user...'
+ALTER ROLE :"admin_user" WITH LOGIN PASSWORD :'admin_password';
+ALTER ROLE :"app_user"   WITH LOGIN PASSWORD :'app_password';
 
-CREATE ROLE :"app_user"
-    LOGIN
-    PASSWORD :'app_password';
+GRANT :"maintenance_role" TO :"admin_user";
+GRANT :"read_write_role"  TO :"app_user";
 
-\echo '[SQL] Granting maintenance role to admin...'
+\echo '[SQL] search_path...'
 
-GRANT :"maintenance_role"
-TO :"admin_user";
+-- Без этого search_path = "$user", public: CREATE TABLE users под admin падает
+-- (нет прав на public), а SELECT FROM users под приложением не находит таблицу.
+ALTER ROLE :"admin_user" IN DATABASE :"db_name" SET search_path = :"schema_name";
+ALTER ROLE :"app_user"   IN DATABASE :"db_name" SET search_path = :"schema_name";
 
-\echo '[SQL] Granting read/write role to application user...'
+\echo '[SQL] Schema...'
 
-GRANT :"read_write_role"
-TO :"app_user";
+CREATE SCHEMA IF NOT EXISTS :"schema_name" AUTHORIZATION :"admin_user";
+ALTER SCHEMA :"schema_name" OWNER TO :"admin_user";
 
-\echo '[SQL] Creating schema...'
+REVOKE ALL ON SCHEMA :"schema_name" FROM PUBLIC;
+GRANT USAGE, CREATE ON SCHEMA :"schema_name" TO :"maintenance_role";
+GRANT USAGE         ON SCHEMA :"schema_name" TO :"read_write_role";
 
-CREATE SCHEMA :"schema_name"
-    AUTHORIZATION :"admin_user";
+\echo '[SQL] Ownership of existing objects...'
 
-\echo '[SQL] Granting maintenance schema privileges...'
+-- Таблицы, представления, отдельные последовательности.
+-- Последовательности serial/identity принадлежат таблице и меняют владельца вместе с ней.
+SELECT format(
+           'ALTER %s %I.%I OWNER TO %I',
+           CASE c.relkind
+               WHEN 'v' THEN 'VIEW'
+               WHEN 'm' THEN 'MATERIALIZED VIEW'
+               WHEN 'S' THEN 'SEQUENCE'
+               WHEN 'f' THEN 'FOREIGN TABLE'
+               ELSE 'TABLE'
+           END,
+           n.nspname, c.relname, :'admin_user')
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = :'schema_name'
+  AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+  AND c.relowner <> :'admin_user'::regrole
+  AND NOT (c.relkind = 'S' AND EXISTS (
+          SELECT 1 FROM pg_depend d
+          WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.deptype IN ('a', 'i')))
+  AND NOT EXISTS (
+          SELECT 1 FROM pg_depend d
+          WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.deptype = 'e')
+\gexec
 
-GRANT USAGE, CREATE
-ON SCHEMA :"schema_name"
-TO :"maintenance_role";
+-- Функции и процедуры (объекты расширений не трогаем).
+SELECT format('ALTER ROUTINE %I.%I(%s) OWNER TO %I',
+              n.nspname, p.proname, pg_get_function_identity_arguments(p.oid), :'admin_user')
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = :'schema_name'
+  AND p.prokind IN ('f', 'p')
+  AND p.proowner <> :'admin_user'::regrole
+  AND NOT EXISTS (
+          SELECT 1 FROM pg_depend d
+          WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
+\gexec
 
-\echo '[SQL] Granting maintenance table privileges...'
+-- Типы: enum, domain, range. Типы строк таблиц и массивов меняются вместе с таблицей/типом.
+SELECT format('ALTER %s %I.%I OWNER TO %I',
+              CASE t.typtype WHEN 'd' THEN 'DOMAIN' ELSE 'TYPE' END,
+              n.nspname, t.typname, :'admin_user')
+FROM pg_type t
+JOIN pg_namespace n ON n.oid = t.typnamespace
+WHERE n.nspname = :'schema_name'
+  AND t.typowner <> :'admin_user'::regrole
+  AND t.typtype IN ('e', 'd', 'r')
+  AND NOT EXISTS (
+          SELECT 1 FROM pg_depend d
+          WHERE d.classid = 'pg_type'::regclass AND d.objid = t.oid AND d.deptype = 'e')
+\gexec
 
-GRANT ALL PRIVILEGES
-ON ALL TABLES IN SCHEMA :"schema_name"
-TO :"maintenance_role";
+\echo '[SQL] Privileges on existing objects...'
 
-\echo '[SQL] Granting maintenance sequence privileges...'
+GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA :"schema_name" TO :"maintenance_role";
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA :"schema_name" TO :"maintenance_role";
+GRANT ALL PRIVILEGES ON ALL ROUTINES  IN SCHEMA :"schema_name" TO :"maintenance_role";
 
-GRANT ALL PRIVILEGES
-ON ALL SEQUENCES IN SCHEMA :"schema_name"
-TO :"maintenance_role";
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES    IN SCHEMA :"schema_name" TO :"read_write_role";
+GRANT USAGE, SELECT, UPDATE          ON ALL SEQUENCES IN SCHEMA :"schema_name" TO :"read_write_role";
+GRANT EXECUTE                        ON ALL ROUTINES  IN SCHEMA :"schema_name" TO :"read_write_role";
 
-\echo '[SQL] Granting maintenance function privileges...'
+\echo '[SQL] Default privileges for future objects of admin...'
 
-GRANT ALL PRIVILEGES
-ON ALL FUNCTIONS IN SCHEMA :"schema_name"
-TO :"maintenance_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE :"admin_user" IN SCHEMA :"schema_name"
+    GRANT ALL PRIVILEGES ON TABLES    TO :"maintenance_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE :"admin_user" IN SCHEMA :"schema_name"
+    GRANT ALL PRIVILEGES ON SEQUENCES TO :"maintenance_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE :"admin_user" IN SCHEMA :"schema_name"
+    GRANT ALL PRIVILEGES ON FUNCTIONS TO :"maintenance_role";
 
-\echo '[SQL] Granting application schema usage...'
+ALTER DEFAULT PRIVILEGES FOR ROLE :"admin_user" IN SCHEMA :"schema_name"
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"read_write_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE :"admin_user" IN SCHEMA :"schema_name"
+    GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO :"read_write_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE :"admin_user" IN SCHEMA :"schema_name"
+    GRANT EXECUTE ON FUNCTIONS TO :"read_write_role";
 
-GRANT USAGE
-ON SCHEMA :"schema_name"
-TO :"read_write_role";
-
-\echo '[SQL] Granting application table privileges...'
-
-GRANT SELECT, INSERT, UPDATE, DELETE
-ON ALL TABLES IN SCHEMA :"schema_name"
-TO :"read_write_role";
-
-\echo '[SQL] Granting application sequence privileges...'
-
-GRANT USAGE, SELECT, UPDATE
-ON ALL SEQUENCES IN SCHEMA :"schema_name"
-TO :"read_write_role";
-
-\echo '[SQL] Configuring default table privileges for application...'
-
-ALTER DEFAULT PRIVILEGES
-FOR ROLE :"admin_user"
-IN SCHEMA :"schema_name"
-GRANT SELECT, INSERT, UPDATE, DELETE
-ON TABLES
-TO :"read_write_role";
-
-\echo '[SQL] Configuring default sequence privileges for application...'
-
-ALTER DEFAULT PRIVILEGES
-FOR ROLE :"admin_user"
-IN SCHEMA :"schema_name"
-GRANT USAGE, SELECT, UPDATE
-ON SEQUENCES
-TO :"read_write_role";
-
-\echo '[SQL] Configuring default table privileges for maintenance...'
-
-ALTER DEFAULT PRIVILEGES
-FOR ROLE :"admin_user"
-IN SCHEMA :"schema_name"
-GRANT ALL PRIVILEGES
-ON TABLES
-TO :"maintenance_role";
-
-\echo '[SQL] Configuring default sequence privileges for maintenance...'
-
-ALTER DEFAULT PRIVILEGES
-FOR ROLE :"admin_user"
-IN SCHEMA :"schema_name"
-GRANT ALL PRIVILEGES
-ON SEQUENCES
-TO :"maintenance_role";
-
-\echo '[SQL] Configuring default function privileges for maintenance...'
-
-ALTER DEFAULT PRIVILEGES
-FOR ROLE :"admin_user"
-IN SCHEMA :"schema_name"
-GRANT ALL PRIVILEGES
-ON FUNCTIONS
-TO :"maintenance_role";
+-- Объекты, созданные через SET ROLE <schema>_maintenance: приложение получает права сразу,
+-- владелец исправится на <schema>_admin при следующей выкатке.
+ALTER DEFAULT PRIVILEGES FOR ROLE :"maintenance_role" IN SCHEMA :"schema_name"
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"read_write_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE :"maintenance_role" IN SCHEMA :"schema_name"
+    GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO :"read_write_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE :"maintenance_role" IN SCHEMA :"schema_name"
+    GRANT EXECUTE ON FUNCTIONS TO :"read_write_role";
 
 \echo '[SQL] Committing transaction...'
 
 COMMIT;
 
-\echo '[SQL] Transaction committed successfully.'
-
 SQL
 
-log "PostgreSQL transaction completed successfully."
+log "Schema, roles and permissions applied."
 
 # ============================================================
 # Verify result
 # ============================================================
 
 log "============================================================"
-log "Verifying created objects"
+log "Verifying"
 log "============================================================"
+
+VERIFY_FILE="/tmp/bootstrap_verify.log"
 
 PGPASSWORD="$POSTGRES_ADMIN_PASSWORD" \
 psql \
@@ -409,55 +383,81 @@ psql \
     -d "$POSTGRES_DB" \
     -v ON_ERROR_STOP=1 \
     -v schema_name="$SCHEMA_NAME" \
-    -v maintenance_role="$MAINTENANCE_ROLE" \
-    -v read_write_role="$READ_WRITE_ROLE" \
     -v admin_user="$ADMIN_USER" \
     -v app_user="$APP_USER" \
     <<'SQL'
 
 \echo '[VERIFY] Schema:'
 
-SELECT
-    n.nspname AS schema,
-    r.rolname AS owner
+SELECT n.nspname AS schema, r.rolname AS owner
 FROM pg_namespace n
-JOIN pg_roles r
-    ON r.oid = n.nspowner
+JOIN pg_roles r ON r.oid = n.nspowner
 WHERE n.nspname = :'schema_name';
 
-\echo '[VERIFY] Roles:'
+\echo '[VERIFY] Users (search_path):'
 
-SELECT
-    rolname,
-    rolcanlogin
-FROM pg_roles
-WHERE rolname IN (
-    :'maintenance_role',
-    :'read_write_role',
-    :'admin_user',
-    :'app_user'
-)
-ORDER BY rolname;
+SELECT r.rolname, r.rolcanlogin, s.setconfig AS settings
+FROM pg_roles r
+LEFT JOIN pg_db_role_setting s
+    ON s.setrole = r.oid AND s.setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database())
+WHERE r.rolname IN (:'admin_user', :'app_user')
+ORDER BY r.rolname;
 
-\echo '[VERIFY] Role memberships:'
+\echo '[VERIFY] Objects in schema:'
 
-SELECT
-    member.rolname AS member,
-    role.rolname AS granted_role
-FROM pg_auth_members m
-JOIN pg_roles role
-    ON role.oid = m.roleid
-JOIN pg_roles member
-    ON member.oid = m.member
-WHERE member.rolname IN (
-    :'admin_user',
-    :'app_user'
-)
-ORDER BY member.rolname, role.rolname;
+SELECT c.relname AS object, c.relkind AS kind, pg_get_userbyid(c.relowner) AS owner
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = :'schema_name' AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+ORDER BY c.relname;
 
 SQL
 
-log "Verification completed successfully."
+# Объекты, к которым у приложения нет прав. Должно быть пусто.
+PGPASSWORD="$POSTGRES_ADMIN_PASSWORD" \
+psql \
+    -h "$POSTGRES_HOST" \
+    -p "$POSTGRES_PORT" \
+    -U "$POSTGRES_ADMIN_USER" \
+    -d "$POSTGRES_DB" \
+    -v ON_ERROR_STOP=1 \
+    -tA \
+    -v schema_name="$SCHEMA_NAME" \
+    -v admin_user="$ADMIN_USER" \
+    -v app_user="$APP_USER" \
+    >"$VERIFY_FILE" \
+    <<'SQL'
+SELECT c.relname || ' (owner ' || pg_get_userbyid(c.relowner) || ')'
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = :'schema_name'
+  AND (
+        -- has_*_privilege со списком прав истинна, если есть ХОТЯ БЫ одно, поэтому по одному.
+        (c.relkind IN ('r', 'p', 'f')
+         AND NOT (    has_table_privilege(:'app_user', c.oid, 'SELECT')
+                  AND has_table_privilege(:'app_user', c.oid, 'INSERT')
+                  AND has_table_privilege(:'app_user', c.oid, 'UPDATE')
+                  AND has_table_privilege(:'app_user', c.oid, 'DELETE')))
+     OR (c.relkind IN ('v', 'm')
+         AND NOT has_table_privilege(:'app_user', c.oid, 'SELECT'))
+     OR (c.relkind = 'S'
+         AND NOT (    has_sequence_privilege(:'app_user', c.oid, 'USAGE')
+                  AND has_sequence_privilege(:'app_user', c.oid, 'SELECT')
+                  AND has_sequence_privilege(:'app_user', c.oid, 'UPDATE')))
+     OR c.relowner <> :'admin_user'::regrole
+  );
+SQL
+
+if [ -s "$VERIFY_FILE" ]; then
+    log "ERROR: objects with wrong owner or without privileges for '$APP_USER':"
+    sed 's/^/[VERIFY]   /' "$VERIFY_FILE"
+    rm -f "$VERIFY_FILE"
+    exit 1
+fi
+
+rm -f "$VERIFY_FILE"
+
+log "All objects are owned by '$ADMIN_USER' and accessible to '$APP_USER'."
 
 # ============================================================
 # Cleanup
@@ -472,17 +472,12 @@ unset APP_PASSWORD
 # ============================================================
 
 log "============================================================"
-log "Schema '$SCHEMA_NAME' created successfully."
+log "Schema '$SCHEMA_NAME' is ready."
 log "============================================================"
 
-log "Created objects:"
-log "  Schema:           $SCHEMA_NAME"
-log "  Admin user:       $ADMIN_USER"
-log "  Maintenance role: $MAINTENANCE_ROLE"
-log "  App user:         $APP_USER"
-log "  Read/write role:  $READ_WRITE_ROLE"
-
-log "Initial passwords are equal to usernames."
-log "CHANGE THEM after initial deployment."
+log "  Schema:           $SCHEMA_NAME (owner $ADMIN_USER)"
+log "  Migrations:       $ADMIN_USER (search_path = $SCHEMA_NAME)"
+log "  Application:      $APP_USER (search_path = $SCHEMA_NAME, read/write data only)"
+log "  Passwords:        Vault, secret/tf/postgres/$SCHEMA_NAME"
 
 log "Bootstrap finished successfully."

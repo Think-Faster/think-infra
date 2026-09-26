@@ -15,11 +15,13 @@ services:
     environment:
       VAULT_ADDR: http://127.0.0.1:8200
 
+    # Только localhost: TLS нет, наружу Vault не выставляется. Скрипты ходят через docker exec,
+    # веб-интерфейс — по SSH-туннелю: ssh -L 8200:127.0.0.1:8200 <сервер>, затем http://localhost:8200
     ports:
-      - "8200:8200"
+      - "127.0.0.1:8200:8200"
 
     volumes:
-      - vault-data:/vault/data
+      - vault-data:/vault/file
       - ./vault-config:/vault/config:ro
 
     # healthy только когда Vault инициализирован и распечатан.
@@ -30,7 +32,17 @@ services:
       retries: 3
       start_period: 10s
 
+    # Сервисы (tf-bff, tf-auth, ...) при старте забирают секреты по адресу http://vault:8200.
+    # Снаружи хоста Vault по-прежнему недоступен.
+    networks:
+      - think-fast-net
+
     restart: unless-stopped
+
+
+networks:
+  think-fast-net:
+    external: true
 
 
 volumes:

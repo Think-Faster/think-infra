@@ -5,10 +5,15 @@ services:
 
     image: redis:7-alpine
 
+    # Пароль из Vault (secret/tf/redis), подставляет scripts/deploy.sh.
+    # Клиенты подключаются с паролем: redis://:<TF_REDIS_PASSWORD>@tf-redis:6379
+    environment:
+      TF_REDIS_PASSWORD: ${TF_REDIS_PASSWORD:?TF_REDIS_PASSWORD is not set}
+
     command:
-      - redis-server
-      - --appendonly
-      - "yes"
+      - sh
+      - -c
+      - exec redis-server --appendonly yes --requirepass "$$TF_REDIS_PASSWORD"
 
     volumes:
       - redis-data:/data
@@ -19,9 +24,8 @@ services:
     healthcheck:
       test:
         [
-          "CMD",
-          "redis-cli",
-          "ping"
+          "CMD-SHELL",
+          "REDISCLI_AUTH=\"$$TF_REDIS_PASSWORD\" redis-cli ping | grep -q PONG"
         ]
       interval: 10s
       timeout: 5s

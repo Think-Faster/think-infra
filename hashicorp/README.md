@@ -1,7 +1,21 @@
 # Vault
 
-Хранилище секретов проекта. Сюда складываются копии `.env` остальных сервисов
-(`secret/tf/kafka`, `secret/tf/rabbit`, …).
+Хранилище секретов инфраструктуры. У каждого стенда (dev, prod) свой Vault.
+Секреты лежат в `secret/tf/<сервис>`, их список — [secrets.conf](../secrets.conf).
+Как ими пользоваться — [README.md](../README.md).
+
+Vault слушает `127.0.0.1:8200` на хосте и `http://vault:8200` в docker-сети `think-fast-net`
+(оттуда секреты забирают контейнеры сервисов, см. docs/vault-tz/README.md). Снаружи сервера он недоступен.
+Скрипты обращаются к нему через `docker exec`, веб-интерфейс открывается по SSH-туннелю:
+
+```bash
+ssh -L 8200:127.0.0.1:8200 <пользователь>@<сервер>
+```
+
+затем `http://localhost:8200`, вход по токену (личный токен `tf-admin`, секреты — в папке `tf/`).
+
+Выкатка Vault **не автоматизирована**: после перезапуска контейнер запечатан, и CI
+всё равно не сможет работать, пока его не распечатают. Изменения `hashicorp/` применяются вручную.
 
 ## Почему пропадали секреты
 
@@ -21,6 +35,9 @@
 
 ## Первый запуск
 
+Шаги 1–6 ниже целиком выполняет `scripts/bootstrap-stand.sh <стенд>` (см. [README.md](../README.md)).
+Здесь — что происходит внутри и как сделать то же руками.
+
 ### 1. Поднять контейнер
 
 ```bash
@@ -29,6 +46,10 @@ docker compose up -d
 ```
 
 Если остался старый контейнер `vault` в dev-режиме — сначала `docker rm -f vault`.
+
+Если контейнер падает с `open /vault/data/vault.db: permission denied` — это первая версия
+исправления (хранилище в `/vault/data`). Сейчас хранилище в `/vault/file`: пересоздать контейнер
+(`docker compose up -d`), том `tf-vault-data` подойдёт тот же.
 Файл `hashicorp/.env` (`VAULT_DEV_ROOT_TOKEN_ID`) больше не используется.
 
 ### 2. Инициализировать
@@ -54,18 +75,46 @@ docker exec vault vault operator unseal <ключ 1>
 docker exec vault vault operator unseal <ключ 2>
 ```
 
-### 4. Включить хранилище `secret/`
+### 4. Настроить хранилище, политики и доступ CI
 
-В dev-режиме `secret/` (KV v2) создавался сам, в обычном режиме — нет:
+Из корня репозитория, с root-токеном:
 
 ```bash
-docker exec -e VAULT_TOKEN=<root-токен> vault vault secrets enable -path=secret kv-v2
+export VAULT_TOKEN=<root-токен>
+hashicorp/scripts/setup.sh apply
 ```
 
-### 5. Вернуть секреты сервисов
+Создаёт хранилище `secret/` (KV v2), политики `tf-deploy`, `tf-admin`, `tf-backup` и AppRole `tf-deploy`.
+Идемпотентно: после изменения скрипта можно запускать повторно.
 
-Секреты из старого dev-Vault потеряны. Заново положить их из `.env` сервисов
-командами `kv put` из [kafka/README.md](../kafka/README.md) и [rabbitmq/README.md](../rabbitmq/README.md).
+### 5. Выдать токены вместо root
+
+```bash
+hashicorp/scripts/setup.sh admin-token <имя>     # каждому администратору — свой
+hashicorp/scripts/setup.sh backup-token          # для cron-бэкапа
+hashicorp/scripts/setup.sh ci-credentials        # VAULT_ROLE_ID / VAULT_SECRET_ID для GitHub
+```
+
+Куда их положить и как заполнить секреты — [README.md](../README.md), раздел «Настройка стенда».
+
+### 6. Отозвать root-токен
+
+После настройки root-токен больше не нужен ни людям, ни CI:
+
+```bash
+docker exec -e VAULT_TOKEN=<root-токен> vault vault token revoke -self
+```
+
+Если root снова понадобится (новые политики, `setup.sh apply`), его выпускают ключами распечатывания:
+
+```bash
+docker exec vault vault operator generate-root -init             # печатает OTP и Nonce
+docker exec vault vault operator generate-root -nonce=<Nonce> <ключ 1>
+docker exec vault vault operator generate-root -nonce=<Nonce> <ключ 2>   # печатает Encoded Token
+docker exec vault vault operator generate-root -decode=<Encoded Token> -otp=<OTP>
+```
+
+После работы — снова `token revoke -self`.
 
 ## После каждого перезапуска
 
@@ -91,16 +140,17 @@ docker exec vault vault operator unseal <ключ 2>
 Поэтому регулярно снимать снапшот:
 
 ```bash
-VAULT_TOKEN=<токен> sh scripts/backup.sh
+VAULT_TOKEN=<токен tf-backup> sh scripts/backup.sh
 ```
 
 Снапшот попадает в `hashicorp/backups/` (в git не хранится), хранятся последние 14.
 Каталог стоит копировать за пределы сервера. Снапшот зашифрован — без ключей распечатывания бесполезен.
 
-Ежедневно по cron (в 03:00):
+Ежедневно в 03:00 — задачу в cron ставит `bootstrap-stand.sh`. Токен `tf-backup` лежит
+в `$TF_INFRA_DIR/hashicorp/.backup-token` (права 600), в crontab его нет:
 
 ```
-0 3 * * * cd /path/to/tf.infra/hashicorp && VAULT_TOKEN=<токен> sh scripts/backup.sh >> backups/backup.log 2>&1
+0 3 * * * VAULT_TOKEN_FILE=<TF_INFRA_DIR>/hashicorp/.backup-token sh <TF_INFRA_DIR>/hashicorp/scripts/backup.sh >> ... # tf-infra:vault-backup
 ```
 
 ### Восстановление из снапшота
@@ -120,5 +170,5 @@ docker exec -e VAULT_TOKEN=<токен> vault vault operator raft snapshot resto
 ## Обновление версии
 
 1. Снять снапшот (`scripts/backup.sh`).
-2. Поменять тег образа в `docker-compose.yml`, `docker compose up -d`.
+2. Поменять тег образа в `docker-compose.yml`, закоммитить, на сервере: `TF_STAND=<стенд> scripts/deploy.sh hashicorp`.
 3. Распечатать.
