@@ -19,11 +19,16 @@ mkdir -p backups
 
 name="vault-$(date +%Y%m%d-%H%M%S).snap"
 
-# Токен периодический: продлеваем при каждом запуске, иначе через 32 дня истечёт.
-docker exec -e VAULT_TOKEN "$VAULT_CONTAINER" vault token renew > /dev/null 2>&1 || true
+# Токен — в контейнер через stdin: docker может вызываться через sudo, который очищает окружение.
+vault_exec() {
+    printf '%s\n' "$VAULT_TOKEN" | docker exec -i "$VAULT_CONTAINER" \
+        sh -c 'IFS= read -r t; VAULT_TOKEN="$t"; export VAULT_TOKEN; exec vault "$@"' vault "$@"
+}
 
-docker exec -e VAULT_TOKEN "$VAULT_CONTAINER" \
-  vault operator raft snapshot save "/tmp/$name"
+# Токен периодический: продлеваем при каждом запуске, иначе через 32 дня истечёт.
+vault_exec token renew > /dev/null 2>&1 || true
+
+vault_exec operator raft snapshot save "/tmp/$name"
 docker cp "$VAULT_CONTAINER:/tmp/$name" "backups/$name"
 docker exec "$VAULT_CONTAINER" rm -f "/tmp/$name"
 
