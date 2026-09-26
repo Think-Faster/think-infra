@@ -20,7 +20,7 @@ http {
 
         listen 80;
 
-        server_name ${DOMAIN};
+        server_name ${SERVER_NAMES};
 
 
         # Let's Encrypt ACME challenge
@@ -46,7 +46,7 @@ http {
 
         listen 443 ssl;
 
-        server_name ${DOMAIN};
+        server_name ${SERVER_NAMES};
 
 
         # --------------------------------------------------

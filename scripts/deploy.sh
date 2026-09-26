@@ -197,15 +197,27 @@ deploy_redis() {
     compose up -d --wait
 }
 
+# Имена из DOMAIN и DOMAIN_ALIASES, которых нет в сертификате (нет сертификата — все).
+cert_missing_names() {
+    local have name aliases="${DOMAIN_ALIASES:-}"
+    have="$(docker run --rm -v "$PWD/certbot/conf:/etc/letsencrypt" certbot/certbot:latest \
+        certificates --cert-name "$DOMAIN" 2> /dev/null | sed -n 's/^ *Domains: //p' || true)"
+    for name in "$DOMAIN" ${aliases//,/ }; do
+        [[ " $have " == *" $name "* ]] || echo "$name"
+    done
+}
+
 deploy_web_server() {
-    local var
+    local var missing
     for var in DOMAIN LETSENCRYPT_EMAIL; do
         [ "${!var:-CHANGE_ME}" != "CHANGE_ME" ] || die "$var не задан в stands/$TF_STAND.env"
     done
 
-    if [ ! -f "certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
-        # Первый запуск: сертификата нет, nginx ещё не занимает порт 80.
-        log "no certificate for $DOMAIN, requesting from Let's Encrypt"
+    # Первый запуск: сертификата нет, nginx ещё не занимает порт 80 (standalone).
+    # Добавилось имя в DOMAIN_ALIASES: сертификат расширяется через работающий nginx (webroot).
+    missing="$(cert_missing_names | tr '\n' ' ')"
+    if [ -n "$missing" ]; then
+        log "certificate for $DOMAIN lacks: ${missing% }, requesting from Let's Encrypt"
         bash scripts/init-letsencrypt.sh
     fi
 

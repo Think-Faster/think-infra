@@ -12,6 +12,9 @@ services:
       - "${WEB_BIND:-0.0.0.0}:80:80"
       - "${WEB_BIND:-0.0.0.0}:443:443"
 
+    # Раз в 6 ч nginx перечитывает конфиг, чтобы подхватить сертификат, продлённый сервисом certbot.
+    command: ["/bin/sh", "-c", "while :; do sleep 21600; nginx -s reload; done & exec nginx -g 'daemon off;'"]
+
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certbot/conf:/etc/letsencrypt:ro
@@ -19,6 +22,28 @@ services:
 
     networks:
       - gateway
+
+
+  # Продление сертификата: certbot renew дважды в сутки. Let's Encrypt продлевает, когда до конца
+  # осталось меньше 30 дней. Проверка идёт через nginx (webroot), порт 80 certbot не занимает.
+  # chmod — как в scripts/init-letsencrypt.sh: выкатке нужен доступ к live/.
+  certbot:
+    image: certbot/certbot:latest
+    container_name: tf-certbot
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        trap exit TERM;
+        while :; do
+        certbot renew --webroot -w /var/www/certbot --quiet;
+        chmod 750 /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null;
+        sleep 43200 & wait $$!;
+        done
+
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
 
 
 networks:
