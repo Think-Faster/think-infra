@@ -7,7 +7,10 @@
 |---|---|---|
 | tf-bff | [tf-bff.md](tf-bff.md) | `postgres/bff`, `kafka/bff`, `rabbit/bff`, `redis`, `app/tf-bff` |
 | tf-auth | [tf-auth.md](tf-auth.md) | `postgres/auth`, `redis`, `app/tf-auth` |
-| tf-funnel | [tf-funnel.md](tf-funnel.md) | `kafka/funnel`, `app/tf-funnel` |
+| tf-funnel | [tf-funnel.md](tf-funnel.md) | `kafka/funnel`, `redis`, `app/tf-funnel` |
+| tf-model | think-faster `ML/INTEGRATION.md` §13.5 | `kafka/model`, `rabbit/model`, `redis`, `app/tf-model` |
+| tf-notify | think-faster `ML/INTEGRATION.md` §13.5 | `rabbit/email`, `rabbit/telegram`, `redis`, `app/tf-notify` |
+| tf-audit | think-faster `ML/INTEGRATION.md` §13.5 | `postgres/audit`, `redis`, `app/tf-audit` |
 
 Исходник скрипта: [../vault-entrypoint.sh](../vault-entrypoint.sh). Какие пути разрешены сервису —
 [../../hashicorp/services.conf](../../hashicorp/services.conf).
