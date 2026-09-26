@@ -93,6 +93,9 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
 
         # --------------------------------------------------
@@ -120,6 +123,69 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
+        }
+
+        # --------------------------------------------------
+        # Модель (прогноз, оценка риска)
+        #
+        # /api/ml/*
+        #       ↓
+        # ${ML_HOST}:${ML_PORT}
+        # --------------------------------------------------
+
+        location /api/ml/ {
+
+            set $ml_upstream http://${ML_HOST}:${ML_PORT};
+
+            rewrite ^/api/ml/(.*)$ /$1 break;
+
+            proxy_pass $ml_upstream;
+
+            proxy_http_version 1.1;
+
+            proxy_set_header Host $host;
+
+            proxy_set_header X-Real-IP $remote_addr;
+
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
+        }
+
+        # --------------------------------------------------
+        # Воронка показаний (приём событий)
+        #
+        # /api/funnel/*
+        #       ↓
+        # ${FUNNEL_HOST}:${FUNNEL_PORT}
+        # --------------------------------------------------
+
+        location /api/funnel/ {
+
+            set $funnel_upstream http://${FUNNEL_HOST}:${FUNNEL_PORT};
+
+            rewrite ^/api/funnel/(.*)$ /$1 break;
+
+            proxy_pass $funnel_upstream;
+
+            proxy_http_version 1.1;
+
+            proxy_set_header Host $host;
+
+            proxy_set_header X-Real-IP $remote_addr;
+
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
 
         # --------------------------------------------------
@@ -145,6 +211,9 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
     }
 }

@@ -34,6 +34,12 @@ required_vars=(
 
     BFF_HOST
     BFF_PORT
+
+    ML_HOST
+    ML_PORT
+
+    FUNNEL_HOST
+    FUNNEL_PORT
 )
 
 for var in "${required_vars[@]}"; do
@@ -86,9 +92,9 @@ docker run --rm -i \
     -e "DOMAIN=$DOMAIN" -e "SERVER_NAMES=$SERVER_NAMES" \
     -e "FRONTEND_HOST=$FRONTEND_HOST" -e "FRONTEND_PORT=$FRONTEND_PORT" \
     -e "AUTH_HOST=$AUTH_HOST" -e "AUTH_PORT=$AUTH_PORT" \
-    -e "BFF_HOST=$BFF_HOST" -e "BFF_PORT=$BFF_PORT" \
+    -e "BFF_HOST=$BFF_HOST" -e "BFF_PORT=$BFF_PORT"     -e "ML_HOST=$ML_HOST" -e "ML_PORT=$ML_PORT"     -e "FUNNEL_HOST=$FUNNEL_HOST" -e "FUNNEL_PORT=$FUNNEL_PORT" \
     nginx:1.29-alpine \
-    envsubst '${DOMAIN} ${SERVER_NAMES} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT}' \
+    envsubst '${DOMAIN} ${SERVER_NAMES} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT} ${ML_HOST} ${ML_PORT} ${FUNNEL_HOST} ${FUNNEL_PORT}' \
     < nginx/nginx.conf.template \
     > nginx/nginx.conf.tmp
 
