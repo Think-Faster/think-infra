@@ -47,7 +47,7 @@ exec приложение — видит готовые переменные о�
 
 | Что | Значение |
 |---|---|
-| PostgreSQL | хост и порт — как сейчас; база `tf`; схема `bff`; пользователи `bff_user` (приложение) / `bff_admin` (миграции) |
+| PostgreSQL | `tf-postgres:5432` (контейнер должен быть в сети `think-fast-net`); база `tf`; схема `bff`; пользователи `bff_user` (приложение) / `bff_admin` (миграции) |
 | Kafka | `tf-kafka:9092`, `SASL_PLAINTEXT`, механизм `PLAIN`, пользователь `tf-bff`. Читает `tf.ingest.journal`, `tf.ingest.reference`, `tf.forecast.results`; пишет в `tf.dlq`. `group.id` начинается с `tf-bff` |
 | RabbitMQ | `tf-rabbit:5672`, vhost `tf`, пользователь `tf-bff`. Публикует в `tf.model.commands` и `tf.notifications`. Очереди и exchange не объявляет (или `passive=true`) |
 | Redis | `tf-redis:6379`, пароль обязателен |
@@ -126,7 +126,7 @@ services:
 
       # $$ — чтобы docker compose не подставлял сам: в контейнер попадёт литерал ${...},
       # его заменит vault-entrypoint.sh значением из Vault.
-      ConnectionStrings__Default: "Host=<как сейчас>;Port=5432;Database=tf;Username=bff_user;Password=$${TF_PG_BFF_USER_PASSWORD}"
+      ConnectionStrings__Default: "Host=tf-postgres;Port=5432;Database=tf;Username=bff_user;Password=$${TF_PG_BFF_USER_PASSWORD}"
       Redis__Configuration: "tf-redis:6379,password=$${TF_REDIS_PASSWORD}"
       Kafka__SaslPassword: "$${TF_KAFKA_BFF_PASSWORD}"
       RabbitMq__Password: "$${TF_RABBIT_BFF_PASSWORD}"
