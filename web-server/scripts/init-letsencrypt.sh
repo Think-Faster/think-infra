@@ -47,8 +47,17 @@ mkdir -p certbot/www
 # Check port 80
 # ==================================================
 
-if ss -lnt 2>/dev/null | grep -q ':80 '; then
-    echo "ERROR: Port 80 is already in use."
+# WEB_BIND — адрес, на котором слушает nginx (stands/<стенд>.env). При 0.0.0.0 мешает любой
+# занятый :80, при конкретном адресе — только он сам и «все адреса».
+WEB_BIND="${WEB_BIND:-0.0.0.0}"
+if [ "$WEB_BIND" = "0.0.0.0" ]; then
+    busy="$(ss -lnt 2>/dev/null | awk '$4 ~ /:80$/')"
+else
+    busy="$(ss -lnt 2>/dev/null | awk -v ip="$WEB_BIND"         '$4 == ip ":80" || $4 == "0.0.0.0:80" || $4 == "*:80" || $4 == "[::]:80"')"
+fi
+
+if [ -n "$busy" ]; then
+    echo "ERROR: Port 80 is already in use (${WEB_BIND})."
     echo
     echo "Let's Encrypt standalone mode requires port 80."
     exit 1
@@ -71,7 +80,7 @@ echo
 
 docker run \
     --rm \
-    -p 80:80 \
+    -p "${WEB_BIND}:80:80" \
     -v "$(pwd)/certbot/conf:/etc/letsencrypt" \
     certbot/certbot:latest \
     certonly \

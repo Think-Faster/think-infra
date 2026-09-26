@@ -189,6 +189,7 @@ docker ps
 | `DB_PORT` | порт базы на сервере — для pgAdmin (раздел 12.8). Должен быть свободен | prod: `15432` |
 | `DOMAIN` | домен сайта, **без** `https://` и без `/` в конце | `greefob.ru` |
 | `LETSENCRYPT_EMAIL` | почта для сертификата | `admin@example.com` |
+| `WEB_BIND` | на каком адресе сервера сайт слушает 80 и 443. Не задан — на всех. Публичный IP — если 80 или 443 на другом адресе занят другой программой | prod: `45.87.41.186` |
 | `DOCKER_NETWORK` | не трогать | `think-fast-net` |
 | `FRONTEND_HOST`, `FRONTEND_PORT` | имя контейнера сайта и его порт | `tf-front`, `80` |
 | `AUTH_HOST`, `AUTH_PORT` | имя контейнера tf-auth и его порт | `tf-auth`, `8081` |
