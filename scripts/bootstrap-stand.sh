@@ -14,7 +14,7 @@
 #   5. секреты: генерация недостающих (scripts/secrets.sh init)
 #   6. сервисы: postgree, redis, kafka, rabbitmq, web-server (scripts/deploy.sh)
 #   7. cron: ежедневные бэкапы Vault и PostgreSQL
-#   8. доступ CI (VAULT_ROLE_ID / VAULT_SECRET_ID) и личный токен администратора
+#   8. доступ CI и сервисов (VAULT_ROLE_ID / VAULT_SECRET_ID) и личный токен администратора
 #   9. отзыв root-токена (по желанию)
 #
 # Токен Vault: на новом стенде — root из инициализации; на существующем — спросит
@@ -264,6 +264,16 @@ else
     echo >&2
     bash "$TF_ROOT/hashicorp/scripts/setup.sh" ci-credentials | sed "s/<стенд>/$STAND/"
 fi
+
+# Доступ сервисов приложения (hashicorp/services.conf) — для GitHub их репозиториев.
+while read -r service _; do
+    if vault_cmd list "auth/approle/role/tf-svc-$service/secret-id" > /dev/null 2>&1; then
+        log "доступ $service уже выдан. Новый: hashicorp/scripts/setup.sh service-credentials $service --rotate"
+    else
+        echo >&2
+        bash "$TF_ROOT/hashicorp/scripts/setup.sh" service-credentials "$service" < /dev/null | sed "s/<стенд>/$STAND/"
+    fi
+done < <(tr -d '\r' < "$TF_ROOT/hashicorp/services.conf" | sed 's/#.*//' | awk 'NF')
 
 echo >&2
 read -r -p "Имя администратора для личного токена Vault (Enter — пропустить): " admin_name

@@ -2,6 +2,8 @@
 
 Инфраструктура Think Faster: docker compose на стенд, по папке на сервис.
 
+> Первый раз? Пошаговая инструкция без предварительных знаний — [QUICK_START.md](QUICK_START.md).
+
 | Папка | Сервис | Секреты в Vault | Выкатка |
 |---|---|---|---|
 | [hashicorp](hashicorp/README.md) | Vault — хранилище секретов | — | `bootstrap-stand.sh` / вручную |
@@ -124,7 +126,7 @@ eval "$(../scripts/secrets.sh env <папка>)"
 Сервисы забирают секреты из Vault сами, при каждом старте контейнера: скрипт
 [docs/vault-entrypoint.sh](docs/vault-entrypoint.sh) входит по AppRole сервиса (`http://vault:8200`
 в сети `think-fast-net`), выставляет переменные окружения и запускает приложение.
-ТЗ для репозиториев сервисов — [docs/vault-for-services.md](docs/vault-for-services.md).
+ТЗ для репозиториев сервисов, по файлу на репозиторий — [docs/vault-tz/](docs/vault-tz/README.md).
 
 - Какой сервис какие пути читает — [hashicorp/services.conf](hashicorp/services.conf).
   По нему `hashicorp/scripts/setup.sh apply` (с root-токеном) создаёт политику и AppRole `tf-svc-<сервис>`.

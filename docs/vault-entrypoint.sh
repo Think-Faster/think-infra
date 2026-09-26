@@ -19,6 +19,10 @@
 #   VAULT_EXPAND        (необязательно) имена переменных через пробел, в значениях которых
 #                       ${КЛЮЧ} заменяется значением секрета. Для строк подключения:
 #                       ConnectionStrings__Default="...;Password=${TF_PG_BFF_USER_PASSWORD}"
+#   VAULT_FILES         (необязательно) секреты-файлы через пробел в виде КЛЮЧ:путь.
+#                       Значение секрета хранится в Vault в base64 (одной строкой) и
+#                       записывается в файл раскодированным, права 600. Для ключей и сертификатов:
+#                       VAULT_FILES="TF_AUTH_JWT_PRIVATE_KEY_B64:/run/secrets/jwt-private.pem"
 #
 # Без VAULT_ROLE_ID (локальная разработка) Vault не используется — приложение запускается
 # с переменными окружения как есть.
@@ -81,11 +85,13 @@ for path in $VAULT_SECRET_PATHS; do
         exit 1
     fi
 
-    while IFS=$'\t' read -r key value; do
+    # Значение передаётся в base64: любые символы, включая переводы строк, доходят без искажений.
+    while IFS=' ' read -r key encoded; do
         [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { revoke; log "ERROR: недопустимое имя ключа '$key' в $path"; exit 1; }
+        value="$(printf '%s' "$encoded" | base64 -d)"
         export "$key=$value"
         loaded+=("$key")
-    done < <(jq -r '.data.data | to_entries[] | [.key, (.value | tostring)] | @tsv' <<< "$json")
+    done < <(jq -r '.data.data | to_entries[] | "\(.key) \(.value | tostring | @base64)"' <<< "$json")
 
     log "secret/tf/$path: загружено"
 done
@@ -111,6 +117,21 @@ for name in ${VAULT_EXPAND:-}; do
         exit 1
     fi
     export "$name=$value"
+done
+
+# ------------------------------------------------------------
+# Секреты-файлы (ключи, сертификаты)
+# ------------------------------------------------------------
+
+for item in ${VAULT_FILES:-}; do
+    key="${item%%:*}"
+    file="${item#*:}"
+    [ "$key" != "$item" ] && [ -n "$file" ] || { log "ERROR: VAULT_FILES: ожидается КЛЮЧ:путь, получено '$item'"; exit 1; }
+    [ -n "${!key+x}" ] || { log "ERROR: VAULT_FILES: ключа $key нет в VAULT_SECRET_PATHS"; exit 1; }
+    mkdir -p "$(dirname "$file")"
+    (umask 077 && printf '%s' "${!key}" | base64 -d > "$file") \
+        || { log "ERROR: VAULT_FILES: $key — не base64 или нельзя записать $file"; exit 1; }
+    log "файл $file: записан"
 done
 
 log "секретов загружено: ${#loaded[@]}, запуск приложения"
