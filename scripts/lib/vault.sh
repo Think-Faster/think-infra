@@ -74,6 +74,17 @@ lookup_key() {
     read -r KEY_SERVICE KEY_PATH key KEY_GENERATOR <<< "$entry"
 }
 
+# user_home — домашний каталог текущего пользователя. Из системной записи, а не из $HOME:
+# у GitHub runner-а, запущенного службой, $HOME может быть не задан.
+user_home() {
+    local home=""
+    if command -v getent > /dev/null; then
+        home="$(getent passwd "$(id -un)" | cut -d: -f6)"
+    fi
+    [ -n "$home" ] || home="${HOME:?не удалось определить домашний каталог}"
+    echo "$home"
+}
+
 # load_stand_env — экспортирует несекретные настройки из stands/$TF_STAND.env.
 # Переменная, уже заданная в окружении, не перезаписывается.
 load_stand_env() {
@@ -92,6 +103,10 @@ load_stand_env() {
         # Секреты — только в Vault.
         if manifest | awk -v key="$key" '$3 == key { found = 1 } END { exit !found }'; then
             die "$key — секрет (secrets.conf), ему не место в $file"
+        fi
+        # ~/путь — в домашнем каталоге пользователя, от которого идёт выкатка.
+        if [[ "$value" == "~/"* ]]; then
+            value="$(user_home)/${value#\~/}"
         fi
         [ -n "${!key+x}" ] || export "$key=$value"
     done < "$file"
