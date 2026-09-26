@@ -150,6 +150,12 @@ generate() {
                 [[ "$value" != -* ]] && break
             done
             ;;
+        rsa-b64)
+            # Закрытый ключ RSA 2048 (PEM), закодированный в base64 одной строкой.
+            # Сервис получает его файлом через VAULT_FILES (docs/vault-entrypoint.sh).
+            value="$(openssl genrsa 2048 2> /dev/null | base64 | tr -d '\r\n')"
+            [ -n "$value" ] || die "openssl не сгенерировал ключ RSA"
+            ;;
         *)
             die "неизвестный генератор: $1"
             ;;
