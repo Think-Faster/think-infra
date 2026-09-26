@@ -239,10 +239,13 @@ if command -v crontab > /dev/null; then
     fi
     mkdir -p "$TF_INFRA_DIR/hashicorp/backups"
 
+    # У cron свой короткий PATH — передаём текущий, чтобы нашлась та же команда docker
+    # (на сервере это может быть обёртка, например ~/bin/docker).
+    cron_env="PATH=$PATH"
     install_cron vault-backup \
-        "0 3 * * * VAULT_TOKEN_FILE=$backup_token_file sh $TF_INFRA_DIR/hashicorp/scripts/backup.sh >> $TF_INFRA_DIR/hashicorp/backups/backup.log 2>&1"
+        "0 3 * * * $cron_env VAULT_TOKEN_FILE=$backup_token_file sh $TF_INFRA_DIR/hashicorp/scripts/backup.sh >> $TF_INFRA_DIR/hashicorp/backups/backup.log 2>&1"
     install_cron postgres-backup \
-        "0 4 * * * bash $TF_INFRA_DIR/postgree/backup.sh >> $TF_INFRA_DIR/postgree/backup.log 2>&1"
+        "0 4 * * * $cron_env bash $TF_INFRA_DIR/postgree/backup.sh >> $TF_INFRA_DIR/postgree/backup.log 2>&1"
 
     if crontab -l 2> /dev/null | grep -q "TF PostgreSQL backup"; then
         log "WARNING: в crontab есть старая задача postgree/cron-control.sh — удалите её (crontab -e)"

@@ -6,8 +6,10 @@ services:
 
     container_name: tf-create-schema
 
-    # Пароли схем (TF_PG_<СХЕМА>_ADMIN/USER_PASSWORD) передаёт scripts/deploy.sh
-    # через `docker compose run -e`. Все пароли — из Vault.
+    # Пароли схем (TF_PG_<СХЕМА>_ADMIN/USER_PASSWORD) — из Vault: scripts/deploy.sh
+    # на время выкатки кладёт их в .deploy.env рядом с этим файлом.
+    env_file:
+      - .deploy.env
     environment:
       POSTGRES_HOST: tf-postgres
       POSTGRES_PORT: 5432

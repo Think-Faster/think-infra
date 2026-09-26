@@ -45,14 +45,19 @@ export COMPOSE_IGNORE_ORPHANS=True
 # ============================================================
 
 LOGGED_IN=0
+SECRET_KEYS=()
+ENV_FILE=""
 
-revoke_token() {
+cleanup() {
+    if [ -n "$ENV_FILE" ]; then
+        rm -f "$ENV_FILE"
+    fi
     if [ "$LOGGED_IN" -eq 1 ]; then
         vault_cmd token revoke -self > /dev/null 2>&1 || true
     fi
 }
 
-trap revoke_token EXIT
+trap cleanup EXIT
 
 mask() {
     if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
@@ -93,6 +98,7 @@ load_secrets() {
 
         mask "$value"
         export "$key=$value"
+        SECRET_KEYS+=("$key")
         count=$((count + 1))
     done < <(manifest "$SERVICE")
 
@@ -113,6 +119,32 @@ sync_files() {
     cd "$target"
 }
 
+# Настройки стенда и секреты передаются в docker compose файлом (--env-file), а не через
+# окружение: на сервере docker может вызываться через sudo, который очищает переменные.
+# Файл с правами 600 живёт только на время выкатки (удаляется в cleanup).
+write_env_file() {
+    local key
+    for key in "${STAND_KEYS[@]}" "${SECRET_KEYS[@]}"; do
+        [[ "${!key}" != *"'"* && "${!key}" != *$'\n'* ]] \
+            || die "$key: значение с ' или переводом строки не поддерживается"
+    done
+
+    ENV_FILE="$PWD/.deploy.env"
+    (
+        umask 077
+        {
+            echo "COMPOSE_IGNORE_ORPHANS=True"
+            for key in "${STAND_KEYS[@]}" "${SECRET_KEYS[@]}"; do
+                printf "%s='%s'\n" "$key" "${!key}"
+            done
+        } > "$ENV_FILE"
+    )
+}
+
+compose() {
+    docker compose --env-file "$ENV_FILE" "$@"
+}
+
 # wait_init <контейнер> — ждёт одноразовый init-контейнер и проверяет код выхода.
 wait_init() {
     local code
@@ -127,18 +159,17 @@ wait_init() {
 # ============================================================
 
 deploy_postgree() {
-    local schema upper key env_args=()
+    local schema upper key
 
     # Каждой схеме из schemas.conf нужны пароли в secrets.conf.
     while IFS= read -r schema; do
         upper="${schema^^}"
         for key in "TF_PG_${upper}_ADMIN_PASSWORD" "TF_PG_${upper}_USER_PASSWORD"; do
             [ -n "${!key:-}" ] || die "схема $schema: нет $key в secrets.conf"
-            env_args+=(-e "$key")
         done
     done < <(tr -d '\r' < db/schemas.conf | sed 's/#.*//' | awk 'NF { print $1 }')
 
-    docker compose up -d --wait postgres
+    compose up -d --wait postgres
 
     # POSTGRES_PASSWORD образ применяет только при создании базы. Синхронизируем с Vault
     # при каждой выкатке (локальный вход в контейнере без пароля).
@@ -147,22 +178,23 @@ deploy_postgree() {
         | docker exec -i tf-postgres psql -q -U tf -d tf -v ON_ERROR_STOP=1 > /dev/null
 
     log "creating schemas and syncing schema user passwords"
-    docker compose -f docker-compose.create_schema.yml build
-    docker compose -f docker-compose.create_schema.yml run --rm -T "${env_args[@]}" create-schema
+    # Пароли схем попадают в контейнер из .deploy.env (env_file в docker-compose.create_schema.yml).
+    compose -f docker-compose.create_schema.yml build
+    compose -f docker-compose.create_schema.yml run --rm -T create-schema
 }
 
 deploy_kafka() {
-    docker compose up -d
+    compose up -d
     wait_init tf-kafka-init
 }
 
 deploy_rabbitmq() {
-    docker compose up -d
+    compose up -d
     wait_init tf-rabbit-init
 }
 
 deploy_redis() {
-    docker compose up -d --wait
+    compose up -d --wait
 }
 
 deploy_web_server() {
@@ -178,14 +210,14 @@ deploy_web_server() {
     fi
 
     bash scripts/generate-nginx-config.sh
-    docker compose up -d --wait
-    docker compose exec -T nginx nginx -t
-    docker compose exec -T nginx nginx -s reload
+    compose up -d --wait
+    compose exec -T nginx nginx -t
+    compose exec -T nginx nginx -s reload
 }
 
 deploy_hashicorp() {
     local rc=0
-    docker compose up -d
+    compose up -d
     # Ждём, пока Vault ответит (запечатанный — тоже ответ).
     for _ in $(seq 1 30); do
         rc=0
@@ -209,6 +241,7 @@ log "============================================================"
 
 load_secrets
 sync_files
+write_env_file
 "deploy_${SERVICE//-/_}"
 
 log "Deploy $SERVICE finished successfully."

@@ -76,8 +76,12 @@ echo "==> Generating nginx.conf..."
 # envsubst берётся из образа nginx: на хосте gettext может не быть.
 # Подставляются только перечисленные переменные, $host и т.п. остаются для nginx.
 # Пишем через временный файл: nginx.conf смонтирован в контейнер, частичный файл ему не нужен.
+# Значения — явно (не секреты): docker может вызываться через sudo, который очищает окружение.
 docker run --rm -i \
-    -e DOMAIN -e FRONTEND_HOST -e FRONTEND_PORT -e AUTH_HOST -e AUTH_PORT -e BFF_HOST -e BFF_PORT \
+    -e "DOMAIN=$DOMAIN" \
+    -e "FRONTEND_HOST=$FRONTEND_HOST" -e "FRONTEND_PORT=$FRONTEND_PORT" \
+    -e "AUTH_HOST=$AUTH_HOST" -e "AUTH_PORT=$AUTH_PORT" \
+    -e "BFF_HOST=$BFF_HOST" -e "BFF_PORT=$BFF_PORT" \
     nginx:1.29-alpine \
     envsubst '${DOMAIN} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT}' \
     < nginx/nginx.conf.template \

@@ -184,7 +184,7 @@ docker ps
 
 | Строка | Что вписать | Пример |
 |---|---|---|
-| `TF_INFRA_DIR` | папка на сервере, куда ставятся программы. `~/` — ваш домашний каталог (прав sudo не нужно) | `~/tf.infra` или `/home/user1/tf/think-prod` |
+| `TF_INFRA_DIR` | папка на сервере, куда ставятся программы. `~/` — ваш домашний каталог (прав sudo не нужно) | prod: `/srv/thinkfaster/tf.infra`, dev: `/home/user1/tf/think-prod` |
 | `DB_PORT` | порт базы данных на сервере. Не трогать | `5432` |
 | `DOMAIN` | домен сайта, **без** `https://` и без `/` в конце | `greefob.ru` |
 | `LETSENCRYPT_EMAIL` | почта для сертификата | `admin@example.com` |
@@ -253,6 +253,10 @@ git checkout prod
 ```
 
 ### 7.3. Папка для программ
+
+> **prod-сервер:** там `docker compose` разрешён только внутри `/srv/thinkfaster`
+> (иначе ошибка `tf-docker: docker compose запускается только внутри /srv/thinkfaster`).
+> Поэтому на prod `TF_INFRA_DIR=/srv/thinkfaster/tf.infra` — папку создаст скрипт, прав у вас на неё хватает.
 
 Если `TF_INFRA_DIR` в файле стенда начинается с `~/` (например `~/tf.infra`) — **ничего делать не нужно**,
 скрипт создаст папку сам в вашем домашнем каталоге.
@@ -611,6 +615,7 @@ crontab -l | grep tf-infra
 |---|---|---|
 | `permission denied while trying to connect to the Docker daemon` | пользователь не в группе docker | шаг 5.2 и **переподключиться** |
 | `нет прав на /opt/tf.infra` | папка принадлежит другому пользователю | шаг 7.3 |
+| `tf-docker: docker compose запускается только внутри /srv/thinkfaster` | на сервере compose разрешён только в этой папке | `TF_INFRA_DIR` в файле стенда должен быть внутри `/srv/thinkfaster` (шаг 7.3) |
 | `tar: … Cannot open: File exists` или `Cannot utime: Operation not permitted` | файлы в `TF_INFRA_DIR` созданы от root | `sudo chown -R $USER <TF_INFRA_DIR>` и запустить снова |
 | `Vault запечатан (sealed)` / `Vault is sealed` | Vault перезапускался | раздел 11 |
 | `Vault is already initialized` | Vault уже запускали раньше — ключи выданы тогда | найти те ключи в менеджере паролей. Если их нет — см. ниже «Ключи потеряны» |

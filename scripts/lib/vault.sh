@@ -2,8 +2,7 @@
 # Общие функции для scripts/secrets.sh и scripts/deploy.sh.
 # Vault вызывается через `docker exec vault vault ...`: CLI на хосте не нужен,
 # Vault слушает localhost:8200 внутри своего контейнера.
-# Токен берётся из переменной окружения VAULT_TOKEN и передаётся в контейнер без значения
-# в командной строке (`-e VAULT_TOKEN`), поэтому не виден в списке процессов.
+# Токен берётся из переменной окружения VAULT_TOKEN и передаётся в контейнер через stdin.
 
 TF_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$TF_ROOT/secrets.conf"
@@ -20,14 +19,21 @@ die() {
     exit 1
 }
 
-# vault_cmd <args...> — команда vault без stdin.
+# Токен передаётся в контейнер первой строкой stdin, а не через `docker exec -e`:
+# на сервере docker может вызываться через sudo, который очищает переменные окружения.
+# В командную строку токен тоже не попадает.
+VAULT_EXEC='IFS= read -r t; if [ -n "$t" ]; then VAULT_TOKEN="$t"; export VAULT_TOKEN; fi; exec vault "$@"'
+
+# vault_cmd <args...> — команда vault без данных на stdin.
 vault_cmd() {
-    docker exec -e VAULT_TOKEN "$VAULT_CONTAINER" vault "$@" < /dev/null
+    printf '%s\n' "${VAULT_TOKEN:-}" \
+        | docker exec -i "$VAULT_CONTAINER" sh -c "$VAULT_EXEC" vault "$@"
 }
 
 # vault_in <args...> — команда vault, stdin передаётся в контейнер (для значений секретов).
 vault_in() {
-    docker exec -i -e VAULT_TOKEN "$VAULT_CONTAINER" vault "$@"
+    { printf '%s\n' "${VAULT_TOKEN:-}"; cat; } \
+        | docker exec -i "$VAULT_CONTAINER" sh -c "$VAULT_EXEC" vault "$@"
 }
 
 vault_require_unsealed() {
@@ -87,6 +93,9 @@ user_home() {
 
 # load_stand_env — экспортирует несекретные настройки из stands/$TF_STAND.env.
 # Переменная, уже заданная в окружении, не перезаписывается.
+# STAND_KEYS — имена переменных из файла стенда (для scripts/deploy.sh: env-файл compose).
+STAND_KEYS=()
+
 load_stand_env() {
     local file line key value
     [ -n "${TF_STAND:-}" ] || die "TF_STAND не задан (dev или prod)"
@@ -109,6 +118,7 @@ load_stand_env() {
             value="$(user_home)/${value#\~/}"
         fi
         [ -n "${!key+x}" ] || export "$key=$value"
+        STAND_KEYS+=("$key")
     done < "$file"
 }
 
