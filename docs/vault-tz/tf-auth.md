@@ -37,7 +37,7 @@ exec приложение — видит готовые переменные о�
 | `postgres/auth` | `TF_PG_AUTH_USER_PASSWORD` | PostgreSQL, пользователь `auth_user` — **приложение** |
 |  | `TF_PG_AUTH_ADMIN_PASSWORD` | PostgreSQL, пользователь `auth_admin` — **только миграции** |
 | `redis` | `TF_REDIS_PASSWORD` | Redis — **обязателен**: ограничение попыток входа (`RedisRateLimitService`) |
-| `app/tf-auth` | свои (раздел 4) | ключ подписи JWT и другие собственные секреты |
+| `app/tf-auth` | `TF_AUTH_JWT_PRIVATE_KEY_B64` | закрытый ключ подписи JWT (RSA 2048, PEM в base64). **Создаёт инфраструктура автоматически** — в файл `/run/secrets/jwt-private.pem` через `VAULT_FILES` |
 
 Путь `app/tf-auth` добавлять в `VAULT_SECRET_PATHS` только после того, как администратор завёл в нём секреты (раздел 4) — иначе старт упадёт: пути нет.
 
@@ -54,7 +54,7 @@ exec приложение — видит готовые переменные о�
 
 - Сервис на .NET, контейнер `tf-auth`, запуск `dotnet WebAPI.dll`.
 - Redis используется для ограничения попыток входа (`WebAPI/Services/RateLimit/RedisRateLimitService.cs`, StackExchange.Redis). После включения пароля в Redis сервис без пароля падает на входе пользователя — пароль из Vault нужен обязательно.
-- Токены подписываются RS256 (`kid: main-key`). Закрытый ключ подписи — **секрет**: найти, где он лежит сейчас (файл, том, переменная окружения), и перенести в Vault (раздел 4, секреты-файлы).
+- Токены подписываются RS256 (`kid: main-key`). Закрытый ключ подписи хранится в Vault (`app/tf-auth` → `TF_AUTH_JWT_PRIVATE_KEY_B64`) и **генерируется инфраструктурой автоматически** при подготовке стенда (`secrets.conf`, генератор `rsa-b64`). Сервис его только читает: `VAULT_FILES` кладёт ключ в `/run/secrets/jwt-private.pem`, приложение читает файл как раньше. Генерация ключа внутри сервиса (`RsaKeyProvider.LoadOrCreate`) на стенде не используется.
 - Миграции EF Core уже работают в схеме `auth` (есть таблица `__EFMigrationsHistory`).
 
 ## 4. Собственные секреты сервиса
