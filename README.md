@@ -110,6 +110,7 @@ eval "$(scripts/secrets.sh env rabbitmq)"   # в текущую оболочку
 | `TF_RABBIT_ADMIN_PASSWORD` | нет — сначала `rabbitmqctl change_password`, см. [rabbitmq/README.md](rabbitmq/README.md) |
 | остальные `TF_RABBIT_*` | да (`tf-rabbit-init`) |
 | `TF_REDIS_PASSWORD` | да (Redis перезапускается) |
+| `TF_AUTH_JWT_PRIVATE_KEY_B64` | при перезапуске `tf-auth` (`docker restart tf-auth`). Все выданные токены станут недействительны — пользователи перелогинятся |
 
 ### Ручные команды docker compose
 
