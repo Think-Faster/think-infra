@@ -15,11 +15,13 @@ services:
     environment:
       VAULT_ADDR: http://127.0.0.1:8200
 
+    # Только localhost: TLS нет, наружу Vault не выставляется. Скрипты ходят через docker exec,
+    # веб-интерфейс — по SSH-туннелю: ssh -L 8200:127.0.0.1:8200 <сервер>, затем http://localhost:8200
     ports:
-      - "8200:8200"
+      - "127.0.0.1:8200:8200"
 
     volumes:
-      - vault-data:/vault/data
+      - vault-data:/vault/file
       - ./vault-config:/vault/config:ro
 
     # healthy только когда Vault инициализирован и распечатан.

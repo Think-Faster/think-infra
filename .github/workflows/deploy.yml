@@ -1,0 +1,48 @@
+# Общая выкатка одного сервиса инфраструктуры. Вызывается из deploy-<сервис>.yml.
+#
+# Стенд = ветка: пуш в dev выкатывает на dev, пуш в prod — на prod.
+# На каждом стенде стоит self-hosted runner с меткой стенда (dev / prod) и доступом к docker.
+# Секреты AppRole — в GitHub Environment с именем стенда (Settings → Environments):
+#   VAULT_ROLE_ID, VAULT_SECRET_ID  (secrets)
+#   TF_INFRA_DIR                    (variables) — каталог инфраструктуры на сервере
+# Порядок настройки — README.md, раздел «Выкатка».
+
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: Папка сервиса (postgree, kafka, rabbitmq, redis, samba, web-server)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: ${{ inputs.service }} → ${{ github.ref_name }}
+
+    # Ручной запуск из другой ветки ни на какой стенд не попадает.
+    if: github.ref_name == 'dev' || github.ref_name == 'prod'
+
+    runs-on: [self-hosted, "${{ github.ref_name }}"]
+    environment: ${{ github.ref_name }}
+
+    # Выкатки одного сервиса на один стенд идут по очереди, не отменяя друг друга.
+    concurrency:
+      group: deploy-${{ github.ref_name }}-${{ inputs.service }}
+      cancel-in-progress: false
+
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy ${{ inputs.service }}
+        run: bash scripts/deploy.sh "${{ inputs.service }}"
+        env:
+          TF_INFRA_DIR: ${{ vars.TF_INFRA_DIR }}
+          VAULT_ROLE_ID: ${{ secrets.VAULT_ROLE_ID }}
+          VAULT_SECRET_ID: ${{ secrets.VAULT_SECRET_ID }}

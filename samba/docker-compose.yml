@@ -10,11 +10,14 @@ services:
 
     restart: unless-stopped
 
+    # SAMBA_DOMAIN, SAMBA_REALM, SAMBA_NETBIOS — несекретные настройки из локального .env.
+    # SAMBA_ADMIN_PASSWORD — из Vault (secret/tf/samba), подставляет scripts/deploy.sh.
+    # Все значения применяются только при первом создании домена (пустой ./data).
     environment:
-      DOMAIN: ${DOMAIN}
-      REALM: ${REALM}
-      NETBIOS: ${NETBIOS}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      DOMAIN: ${SAMBA_DOMAIN:?SAMBA_DOMAIN is not set}
+      REALM: ${SAMBA_REALM:?SAMBA_REALM is not set}
+      NETBIOS: ${SAMBA_NETBIOS:?SAMBA_NETBIOS is not set}
+      ADMIN_PASSWORD: ${SAMBA_ADMIN_PASSWORD:?SAMBA_ADMIN_PASSWORD is not set}
 
     volumes:
       - ./data/samba:/var/lib/samba

@@ -11,7 +11,6 @@ Kafka здесь — шина потоков данных: показания, �
 | `docker-compose.yml` | `tf-kafka` — брокер; `tf-kafka-init` — одноразовый контейнер, создаёт топики и права |
 | `topics.conf` | Декларативный список топиков (партиции, хранение, сжатие) |
 | `acls.conf` | Права сервисов на топики и группы консьюмеров |
-| `.env.template` | Шаблон `.env`: ID кластера и пароли |
 | `scripts/init.sh` | Применяет `topics.conf` и `acls.conf`, идемпотентен |
 | `scripts/healthcheck.sh` | Брокер отвечает и контроллер KRaft выбран |
 | `scripts/client-config.sh` | Генерирует файл настроек клиента для CLI-утилит |
@@ -19,71 +18,50 @@ Kafka здесь — шина потоков данных: показания, �
 
 ## Запуск
 
-### 1. Заполнить `.env`
+### 1. Секреты — в Vault
 
-```bash
-cd kafka
-cp .env.template .env
-```
+Все секреты Kafka лежат в Vault стенда по пути `secret/tf/kafka`, файла `.env` с паролями нет.
+Список — в [secrets.conf](../secrets.conf), общий порядок работы — в [README.md](../README.md).
 
 | Переменная | Что это |
 |---|---|
-| `KAFKA_CLUSTER_ID` | ID кластера KRaft. Задаётся **один раз** до первого запуска и больше не меняется |
+| `KAFKA_CLUSTER_ID` | ID кластера KRaft. Создаётся **один раз** до первого запуска и больше не меняется |
 | `TF_KAFKA_ADMIN_PASSWORD` | Пароль суперпользователя `admin` (брокер, init, обслуживание) |
 | `TF_KAFKA_FUNNEL_PASSWORD` | Пароль пользователя `tf-funnel` |
 | `TF_KAFKA_MODEL_PASSWORD` | Пароль пользователя `tf-model` |
 | `TF_KAFKA_BFF_PASSWORD` | Пароль пользователя `tf-bff` |
 
-Сгенерировать значения:
+Сгенерировать недостающие (на сервере стенда, из корня репозитория):
 
 ```bash
-docker run --rm apache/kafka:4.0.0 /opt/kafka/bin/kafka-storage.sh random-uuid   # KAFKA_CLUSTER_ID
-openssl rand -hex 24                                                              # каждый пароль
+scripts/secrets.sh init kafka
 ```
 
-Пароли — только латиница и цифры (они подставляются в JAAS-строку в кавычках).
 Если `KAFKA_CLUSTER_ID` поменяется после первого запуска, брокер не стартует на старом томе
-(`Invalid cluster.id`), поэтому `.env` терять нельзя — см. следующий шаг.
+(`Invalid cluster.id`), поэтому `secrets.sh rotate` для него запрещён.
 
-### 2. Сохранить копию `.env` в Vault
+### 2. Выкатка
 
-`.env` не хранится в git. Чтобы не потерять секреты, копия лежит в Vault по пути
-`secret/tf/kafka`, ключи совпадают с именами переменных.
-
-Через веб-интерфейс: `http://<хост>:8200` → `secret/` → **Create secret** → путь `tf/kafka`,
-добавить пять пар «переменная — значение».
-
-Или из консоли (из папки `kafka`, контейнер Vault называется `vault`):
-
-```bash
-docker exec -e VAULT_TOKEN=<токен> -e VAULT_ADDR=http://127.0.0.1:8200 vault \
-  vault kv put secret/tf/kafka $(grep -E '^[A-Z_]+=' .env | tr -d '\r')
-```
-
-Восстановить `.env` из Vault:
-
-```bash
-for key in KAFKA_CLUSTER_ID TF_KAFKA_ADMIN_PASSWORD TF_KAFKA_FUNNEL_PASSWORD TF_KAFKA_MODEL_PASSWORD TF_KAFKA_BFF_PASSWORD; do
-  echo "$key=$(docker exec -e VAULT_TOKEN=<токен> -e VAULT_ADDR=http://127.0.0.1:8200 vault vault kv get -field=$key secret/tf/kafka)"
-done > .env
-```
-
-После смены любого пароля в `.env` — обновить копию в Vault той же командой `kv put`.
-
-> Vault хранит данные на диске и переживает перезапуск, но после старта его нужно распечатать,
-> а от потери тома защищают только снапшоты — см. [hashicorp/README.md](../hashicorp/README.md).
-
-### 3. Поднять Kafka
+Обычно — GitHub Actions: изменения в `kafka/` при пуше в `dev`/`prod` выкатываются на свой стенд
+(`.github/workflows/deploy-kafka.yml`). Вручную на сервере:
 
 ```bash
 docker network create think-fast-net   # если сети ещё нет
-docker compose up -d
-docker compose logs -f tf-kafka-init   # итог: список созданных топиков
+TF_INFRA_DIR=<каталог инфраструктуры> VAULT_TOKEN=<токен> scripts/deploy.sh kafka
+```
+
+`deploy.sh` читает секреты из Vault, поднимает `tf-kafka` и ждёт завершения `tf-kafka-init`
+(итог — список топиков в логе).
+
+Для ручных команд `docker compose` в папке `kafka` сначала загрузить секреты в оболочку:
+
+```bash
+eval "$(../scripts/secrets.sh env kafka)"
+docker compose up tf-kafka-init
 ```
 
 `tf-kafka-init` ждёт, пока healthcheck брокера станет `healthy`, применяет конфиги и завершается с кодом 0.
-Статус `Exited (0)` у него — это норма. Повторный `docker compose up -d` запускает его снова:
-существующие топики не пересоздаются, данные не теряются.
+Статус `Exited (0)` у него — это норма. Повторный запуск ничего не пересоздаёт, данные не теряются.
 
 Данные лежат в именованном томе `tf-kafka-data` и переживают `docker compose down` и пересоздание контейнера.
 Удаляет их только `docker compose down -v` или `docker volume rm tf-kafka-data`.
@@ -96,7 +74,7 @@ docker compose logs -f tf-kafka-init   # итог: список созданны
 | `security.protocol` | `SASL_PLAINTEXT` |
 | `sasl.mechanism` | `PLAIN` |
 | Пользователь | `tf-funnel`, `tf-model` или `tf-bff` |
-| Пароль | `TF_KAFKA_<СЕРВИС>_PASSWORD` из `.env` |
+| Пароль | `TF_KAFKA_<СЕРВИС>_PASSWORD` из Vault (`scripts/secrets.sh get TF_KAFKA_BFF_PASSWORD`) |
 | `group.id` | должен начинаться с имени сервиса: `tf-model`, `tf-bff-journal` и т.п. |
 | Сжатие у продюсера | `lz4` (как у топиков, иначе брокер будет пережимать) |
 | Размер сообщения | не больше 1 МБ |
@@ -121,8 +99,9 @@ docker compose logs -f tf-kafka-init   # итог: список созданны
 - Трафик внутри `think-fast-net` не шифруется (SASL_PLAINTEXT). Порт на хост не публикуется,
   поэтому с других машин брокер недоступен. На Linux сам Docker-хост технически может достучаться
   до IP контейнера в bridge-сети, но без логина и пароля брокер его не пустит.
-- Смена пароля или добавление пользователя — правка `.env` / `docker-compose.yml` и
-  `docker compose up -d tf-kafka` (брокер перезапустится).
+- Смена пароля — `scripts/secrets.sh rotate <КЛЮЧ>` и выкатка (брокер перезапустится).
+  Добавление пользователя — строка в `secrets.conf`, `secrets.sh init kafka`, правка `docker-compose.yml`
+  и `scripts/client-config.sh`, выкатка.
 
 ## CLI внутри контейнера
 
@@ -130,7 +109,7 @@ docker compose logs -f tf-kafka-init   # итог: список созданны
 Удобно зайти в контейнер один раз:
 
 ```bash
-docker compose exec tf-kafka bash
+docker exec -it tf-kafka bash
 cd /opt/kafka/bin
 ADMIN=$(bash /opt/tf/client-config.sh admin)
 ```
@@ -184,10 +163,7 @@ ADMIN=$(bash /opt/tf/client-config.sh admin)
    ```
 3. Если нужны права — добавить строки в `acls.conf`. Топики `tf.ingest.*` уже покрыты
    префиксными правами funnel и model, для bff нужна отдельная строка.
-4. Применить:
-   ```bash
-   docker compose up tf-kafka-init
-   ```
+4. Применить: выкатка (пуш в ветку стенда) или `docker compose up tf-kafka-init` с загруженными секретами.
 
 Удаление топика — только вручную (данные будут потеряны), затем убрать строку из `topics.conf`:
 
@@ -197,7 +173,7 @@ ADMIN=$(bash /opt/tf/client-config.sh admin)
 
 ## Как изменить хранение
 
-Поменять значения в третьей колонке `topics.conf` и выполнить `docker compose up tf-kafka-init`.
+Поменять значения в третьей колонке `topics.conf` и выкатить (или `docker compose up tf-kafka-init` с загруженными секретами).
 Для существующего топика `init.sh` перезаписывает перечисленные настройки (`kafka-configs --alter`),
 топик не пересоздаётся. Изменение вступает в силу сразу, старые сегменты удаляются в фоне.
 
@@ -229,7 +205,7 @@ ADMIN=$(bash /opt/tf/client-config.sh admin)
 
 ## Права
 
-Добавить право — строка в `acls.conf` и `docker compose up tf-kafka-init`.
+Добавить право — строка в `acls.conf` и выкатка.
 Удаление строки право **не** отзывает, это делается вручную:
 
 ```bash
@@ -242,15 +218,15 @@ ADMIN=$(bash /opt/tf/client-config.sh admin)
 
 ```bash
 # 1. Все пять топиков существуют с заданными партициями и хранением
-docker compose logs tf-kafka-init
+docker logs tf-kafka-init
 
 # 2. Сообщение переживает перезапуск контейнера
-docker compose exec tf-kafka bash /opt/tf/smoke-test.sh produce      # печатает marker
-docker compose restart tf-kafka
-docker compose exec tf-kafka bash /opt/tf/smoke-test.sh consume <marker>
+docker exec -it tf-kafka bash /opt/tf/smoke-test.sh produce      # печатает marker
+docker restart tf-kafka
+docker exec -it tf-kafka bash /opt/tf/smoke-test.sh consume <marker>
 
 # 3. Сервис без прав получает отказ
-docker compose exec tf-kafka bash /opt/tf/smoke-test.sh deny
+docker exec -it tf-kafka bash /opt/tf/smoke-test.sh deny
 
 # 4. Брокер недоступен с хоста: порт не опубликован
 docker port tf-kafka           # пустой вывод

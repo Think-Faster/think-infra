@@ -78,6 +78,21 @@ if [[ ! "$SCHEMA_NAME" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
     exit 1
 fi
 
+# Пароли пользователей схемы — из Vault (secrets.conf), передаёт scripts/deploy.sh:
+#   auth -> TF_PG_AUTH_ADMIN_PASSWORD, TF_PG_AUTH_USER_PASSWORD
+
+ADMIN_PASSWORD_VAR="TF_PG_${SCHEMA_NAME^^}_ADMIN_PASSWORD"
+APP_PASSWORD_VAR="TF_PG_${SCHEMA_NAME^^}_USER_PASSWORD"
+
+ADMIN_PASSWORD="${!ADMIN_PASSWORD_VAR:-}"
+APP_PASSWORD="${!APP_PASSWORD_VAR:-}"
+
+if [ -z "$ADMIN_PASSWORD" ] || [ -z "$APP_PASSWORD" ]; then
+    log "ERROR: $ADMIN_PASSWORD_VAR or $APP_PASSWORD_VAR is empty."
+    log "Add them to secrets.conf and run scripts/secrets.sh init postgree."
+    exit 1
+fi
+
 log "Configuration is valid."
 
 # ============================================================
@@ -195,40 +210,35 @@ SCHEMA_EXISTS="$(echo "$SCHEMA_EXISTS" | xargs)"
 
 if [ "$SCHEMA_EXISTS" = "1" ]; then
     log "Schema '$SCHEMA_NAME' already exists."
-    log "Existing schema will NOT be modified."
-    log "Existing roles and permissions will NOT be modified."
-    log "Skipping."
+    log "Existing schema, roles and permissions will NOT be modified."
+    log "Syncing passwords of '$ADMIN_USER' and '$APP_USER' with Vault..."
 
-    unset POSTGRES_ADMIN_PASSWORD
+    PGPASSWORD="$POSTGRES_ADMIN_PASSWORD" \
+    psql \
+        -h "$POSTGRES_HOST" \
+        -p "$POSTGRES_PORT" \
+        -U "$POSTGRES_ADMIN_USER" \
+        -d "$POSTGRES_DB" \
+        -q \
+        -v ON_ERROR_STOP=1 \
+        -v admin_user="$ADMIN_USER" \
+        -v app_user="$APP_USER" \
+        -v admin_password="$ADMIN_PASSWORD" \
+        -v app_password="$APP_PASSWORD" \
+        <<'SQL'
+ALTER ROLE :"admin_user" PASSWORD :'admin_password';
+ALTER ROLE :"app_user" PASSWORD :'app_password';
+SQL
+
+    log "Passwords synced."
+
+    unset POSTGRES_ADMIN_PASSWORD ADMIN_PASSWORD APP_PASSWORD
 
     exit 0
 fi
 
 log "Schema '$SCHEMA_NAME' does not exist."
 log "Proceeding with creation."
-
-# ============================================================
-# Initial passwords for new users
-# ============================================================
-
-log "============================================================"
-log "Preparing passwords for new users"
-log "============================================================"
-
-# Initial passwords are intentionally equal to usernames.
-#
-# Example:
-#
-#   auth_admin -> password "auth_admin"
-#   auth_user  -> password "auth_user"
-#
-# These passwords should be changed after initial deployment.
-
-ADMIN_PASSWORD="$ADMIN_USER"
-APP_PASSWORD="$APP_USER"
-
-log "Initial password for '$ADMIN_USER' = username."
-log "Initial password for '$APP_USER' = username."
 
 # ============================================================
 # Create PostgreSQL objects
@@ -482,7 +492,6 @@ log "  Maintenance role: $MAINTENANCE_ROLE"
 log "  App user:         $APP_USER"
 log "  Read/write role:  $READ_WRITE_ROLE"
 
-log "Initial passwords are equal to usernames."
-log "CHANGE THEM after initial deployment."
+log "Passwords: Vault, secret/tf/postgres/$SCHEMA_NAME."
 
 log "Bootstrap finished successfully."
