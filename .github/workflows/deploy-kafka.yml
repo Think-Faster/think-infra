@@ -1,0 +1,20 @@
+name: deploy kafka
+
+on:
+  push:
+    branches: [dev, prod]
+    paths:
+      - kafka/**
+      - scripts/**
+      - secrets.conf
+      - stands/**
+      - .github/workflows/deploy.yml
+      - .github/workflows/deploy-kafka.yml
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy.yml
+    with:
+      service: kafka
+    secrets: inherit

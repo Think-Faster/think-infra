@@ -1,10 +1,10 @@
 #!/bin/bash
 # Ручная проверка критериев приёмки. Запускается внутри tf-kafka:
 #
-#   docker compose exec tf-kafka bash /opt/tf/smoke-test.sh produce
-#   docker compose restart tf-kafka
-#   docker compose exec tf-kafka bash /opt/tf/smoke-test.sh consume <marker>
-#   docker compose exec tf-kafka bash /opt/tf/smoke-test.sh deny
+#   docker exec -it tf-kafka bash /opt/tf/smoke-test.sh produce
+#   docker restart tf-kafka
+#   docker exec -it tf-kafka bash /opt/tf/smoke-test.sh consume <marker>
+#   docker exec -it tf-kafka bash /opt/tf/smoke-test.sh deny
 #
 # Тестовые сообщения пишутся в tf.dlq с ключом smoke-test.
 

@@ -8,17 +8,14 @@ cd "$(dirname "$0")/.."
 # Load environment
 # ==================================================
 
-if [ ! -f .env ]; then
-    echo "ERROR: .env file not found."
-    echo
-    echo "Create it first:"
-    echo "  cp .env.example .env"
-    exit 1
-fi
+# Переменные задаёт scripts/deploy.sh из stands/<стенд>.env.
+# Для ручного запуска можно положить их в web-server/.env.
 
-set -a
-source .env
-set +a
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+fi
 
 
 # ==================================================
@@ -32,7 +29,7 @@ required_vars=(
 
 for var in "${required_vars[@]}"; do
     if [ -z "${!var:-}" ]; then
-        echo "ERROR: Required variable '$var' is not set."
+        echo "ERROR: Required variable '$var' is not set (stands/<стенд>.env)."
         exit 1
     fi
 done
