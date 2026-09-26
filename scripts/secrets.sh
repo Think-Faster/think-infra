@@ -8,6 +8,7 @@
 #   scripts/secrets.sh rotate <КЛЮЧ>       сгенерировать новое значение и перезаписать
 #   scripts/secrets.sh set <КЛЮЧ>          записать своё значение (из stdin или с клавиатуры)
 #   scripts/secrets.sh import <.env> [папка]  перенести значения из старого .env (только недостающие)
+#   scripts/secrets.sh relocate <путь>     перенести ключи из старого пути в пути по secrets.conf
 #   scripts/secrets.sh get <КЛЮЧ>          напечатать значение (чтобы передать владельцу сервиса)
 #   eval "$(scripts/secrets.sh env <папка>)"  секреты сервиса в переменные текущей оболочки
 #                                          (для ручных docker compose up / run)
@@ -40,6 +41,10 @@ cmd_init() {
         if kv_get "$path" "$key" > /dev/null; then
             continue
         fi
+        if [ "$gen" = "manual" ]; then
+            log "skip $key: значение выдаётся извне — scripts/secrets.sh set $key"
+            continue
+        fi
         generate "$gen" | kv_write "$path" "$key"
         log "generated $KV_MOUNT/$KV_PREFIX/$path $key ($gen)"
         created=$((created + 1))
@@ -51,6 +56,7 @@ cmd_rotate() {
     local key="${1:?usage: rotate <KEY>}"
     lookup_key "$key"
     [ "$KEY_GENERATOR" != "cluster-id" ] || die "$key нельзя менять: брокер не стартует на старом томе"
+    [ "$KEY_GENERATOR" != "manual" ] || die "$key выдаётся извне — новое значение: scripts/secrets.sh set $key"
     generate "$KEY_GENERATOR" | kv_write "$KEY_PATH" "$key"
     log "rotated $KV_MOUNT/$KV_PREFIX/$KEY_PATH $key"
     log "применить: выкатить '$KEY_SERVICE' (см. README, раздел «Ротация»)"
@@ -92,6 +98,34 @@ cmd_import() {
     log "imported: $imported"
 }
 
+# relocate <старый путь> — переносит ключи, которые по secrets.conf теперь живут в другом пути
+# (например, TF_KAFKA_BFF_PASSWORD из kafka в kafka/bff), и удаляет их из старого пути.
+# Значения не меняются. Повторный запуск ничего не делает.
+cmd_relocate() {
+    local old="${1:?usage: relocate <старый путь>}" svc path key gen value current moved=0
+    vault_cmd kv get -mount="$KV_MOUNT" "$KV_PREFIX/$old" > /dev/null 2>&1 \
+        || die "нет $KV_MOUNT/$KV_PREFIX/$old"
+
+    while read -r svc path key gen; do
+        [ "$path" != "$old" ] || continue
+        value="$(kv_get "$old" "$key")" || continue
+
+        if current="$(kv_get "$path" "$key")"; then
+            [ "$current" = "$value" ] \
+                || die "$key уже есть в $path с другим значением — разобраться вручную"
+        else
+            printf '%s' "$value" | kv_write "$path" "$key"
+        fi
+
+        # JSON merge patch: null удаляет ключ из старого пути.
+        printf '{"%s": null}' "$key" | vault_in kv patch -mount="$KV_MOUNT" "$KV_PREFIX/$old" - > /dev/null
+        log "moved $key: $old -> $path"
+        moved=$((moved + 1))
+    done < <(manifest)
+
+    log "moved: $moved"
+}
+
 cmd_get() {
     local key="${1:?usage: get <KEY>}"
     lookup_key "$key"
@@ -114,7 +148,7 @@ command -v openssl > /dev/null || die "openssl не установлен"
 cmd="$1"; shift
 
 case "$cmd" in
-    status|init|rotate|set|import|get|env) ;;
+    status|init|rotate|set|import|relocate|get|env) ;;
     *) usage ;;
 esac
 

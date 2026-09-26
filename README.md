@@ -119,6 +119,23 @@ eval "$(../scripts/secrets.sh env <папка>)"
 
 Или использовать `docker logs <контейнер>` / `docker exec` — им переменные не нужны.
 
+## Сервисы приложения (tf-bff, tf-auth, tf-funnel)
+
+Сервисы забирают секреты из Vault сами, при каждом старте контейнера: скрипт
+[docs/vault-entrypoint.sh](docs/vault-entrypoint.sh) входит по AppRole сервиса (`http://vault:8200`
+в сети `think-fast-net`), выставляет переменные окружения и запускает приложение.
+ТЗ для репозиториев сервисов — [docs/vault-for-services.md](docs/vault-for-services.md).
+
+- Какой сервис какие пути читает — [hashicorp/services.conf](hashicorp/services.conf).
+  По нему `hashicorp/scripts/setup.sh apply` (с root-токеном) создаёт политику и AppRole `tf-svc-<сервис>`.
+- Доступ для GitHub репозитория сервиса: `hashicorp/scripts/setup.sh service-credentials <сервис>` →
+  `VAULT_ROLE_ID` / `VAULT_SECRET_ID` в Environment `dev` / `prod` этого репозитория.
+- Собственные секреты сервиса (JWT, ключи API) — строки `app/<сервис>` в `secrets.conf`,
+  затем `scripts/secrets.sh init` (генерируемые) или `scripts/secrets.sh set <КЛЮЧ>` (генератор `manual`).
+- Пароль каждой учётки Kafka / RabbitMQ лежит в своём пути (`kafka/bff`, `rabbit/model`, ...):
+  сервис не видит пароли admin и чужих учёток. Стенд, где пароли ещё в общих путях `kafka` / `rabbit`,
+  переводится командами `scripts/secrets.sh relocate kafka` и `scripts/secrets.sh relocate rabbit`.
+
 ## PostgreSQL: схемы и права
 
 Схемы перечислены в [postgree/db/schemas.conf](postgree/db/schemas.conf). Для схемы `auth`:

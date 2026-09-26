@@ -32,7 +32,17 @@ services:
       retries: 3
       start_period: 10s
 
+    # Сервисы (tf-bff, tf-auth, ...) при старте забирают секреты по адресу http://vault:8200.
+    # Снаружи хоста Vault по-прежнему недоступен.
+    networks:
+      - think-fast-net
+
     restart: unless-stopped
+
+
+networks:
+  think-fast-net:
+    external: true
 
 
 volumes:
