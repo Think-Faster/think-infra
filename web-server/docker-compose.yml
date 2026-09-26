@@ -5,9 +5,12 @@ services:
     container_name: tf-nginx
     restart: unless-stopped
 
+    # Адрес задаётся в stands/<стенд>.env: WEB_BIND=0.0.0.0 — все адреса сервера (по умолчанию).
+    # На prod 127.0.0.1:80 и 443 на адресе Tailscale заняты другими программами, поэтому там
+    # nginx слушает только публичный адрес.
     ports:
-      - "80:80"
-      - "443:443"
+      - "${WEB_BIND:-0.0.0.0}:80:80"
+      - "${WEB_BIND:-0.0.0.0}:443:443"
 
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
