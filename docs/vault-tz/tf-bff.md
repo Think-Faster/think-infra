@@ -1,88 +1,97 @@
-# ТЗ: tf-bff получает секреты из Vault при старте контейнера
+# Задание: tf-bff берёт секреты из Vault при старте контейнера
 
-Для агента и разработчиков репозитория **tf-bff**. Инфраструктура (Vault, PostgreSQL, Kafka, RabbitMQ, Redis) уже работает на стенде — менять её не нужно, только подключиться.
+Для агента и разработчиков репозитория **tf-bff**.
 
-## 1. Цель
+## 1. Что происходит сейчас и что нужно
 
-Пароли, ключи и токены сервиса не хранятся нигде, кроме Vault стенда: ни в git, ни в `.env` на сервере, ни в `appsettings*.json`, ни в образе, ни в GitHub Secrets. Контейнер при **каждом старте** (выкатка, `docker restart`, перезагрузка сервера) сам забирает свои секреты из Vault. В GitHub хранится только доступ сервиса к Vault — `VAULT_ROLE_ID` и `VAULT_SECRET_ID`.
+Инфраструктура стенда (PostgreSQL, Kafka, RabbitMQ, Redis, Vault) переведена на новую схему и
+**поднята заново: пароли новые, база новая**. Все пароли лежат **только в Vault**. Старые пароли
+из `.env` и GitHub Secrets больше не подходят — поэтому сейчас миграции падают с
+`password authentication failed for user "tf"`.
 
-**Код приложения не меняется**: оно, как и раньше, читает настройки из переменных окружения. Меняются Dockerfile, docker-compose и workflow выкатки.
+Нужно, чтобы tf-bff при **каждом старте контейнера** сам забирал свои пароли из Vault.
+
+**Код приложения почти не меняется**: оно, как и раньше, читает настройки из переменных окружения.
+Меняются Dockerfile, docker-compose, скрипт миграций и workflow выкатки.
+
+Проверено со стороны инфраструктуры: пользователь `bff_admin` с паролем из Vault подключается
+к базе и попадает в схему `bff`. Всё готово — осталась конфигурация tf-bff.
 
 ## 2. Как это работает
 
 ```
-GitHub Secrets (Environment dev/prod): VAULT_ROLE_ID, VAULT_SECRET_ID
+GitHub Environment (dev / prod): VAULT_ROLE_ID, VAULT_SECRET_ID
         │  выкатка: docker compose up -d
         ▼
-контейнер tf-bff стартует ─► vault-entrypoint.sh
-        │   1. входит в Vault (http://vault:8200, сеть think-fast-net) по AppRole сервиса
-        │   2. читает пути из VAULT_SECRET_PATHS → каждый ключ становится переменной окружения
-        │   3. подставляет ${КЛЮЧ} в переменные из VAULT_EXPAND (строки подключения)
-        │   4. пишет секреты-файлы из VAULT_FILES (ключи, сертификаты)
-        │   5. отзывает токен, убирает VAULT_ROLE_ID/VAULT_SECRET_ID из окружения
+контейнер стартует ─► vault-entrypoint.sh (скрипт в конце документа)
+        │  1. входит в Vault: http://vault:8200 (сеть think-fast-net)
+        │  2. читает пути из VAULT_SECRET_PATHS → каждый ключ становится переменной окружения
+        │  3. подставляет ${КЛЮЧ} в переменные из VAULT_EXPAND (строки подключения)
+        │  4. убирает VAULT_ROLE_ID / VAULT_SECRET_ID из окружения
         ▼
 exec приложение — видит готовые переменные окружения
 ```
 
-- Vault — контейнер `vault` в сети `think-fast-net`, адрес **`http://vault:8200`**. Снаружи сервера недоступен.
-- Сервис может читать **только свои пути** (политика `tf-svc-tf-bff`). Запрос чужого пути — ошибка при старте.
-- После перезагрузки сервера Vault запечатан, пока администратор его не распечатает. Контейнер в это время ждёт до 10 минут (пишет в лог попытки), затем падает и перезапускается по `restart`.
+- Vault доступен только из docker-сети `think-fast-net` (снаружи сервера — нет).
+- tf-bff может читать **только свои пути** (таблица ниже). Любой другой путь — ошибка при старте.
+- После перезагрузки сервера Vault запечатан, пока администратор его не откроет. Контейнер ждёт
+  до 10 минут (пишет попытки в лог), потом падает и перезапускается по `restart`.
 
-## 3. Секреты сервиса
+## 3. Что доступно tf-bff в Vault
 
-Путь — относительно `secret/tf/`. Ключ = имя переменной окружения, которую получит контейнер.
-
-| Путь (`VAULT_SECRET_PATHS`) | Переменная | Что это |
+| Путь (`VAULT_SECRET_PATHS`) | Переменная | Для чего |
 |---|---|---|
-| `postgres/bff` | `TF_PG_BFF_USER_PASSWORD` | PostgreSQL, пользователь `bff_user` — **приложение** |
-|  | `TF_PG_BFF_ADMIN_PASSWORD` | PostgreSQL, пользователь `bff_admin` — **только миграции** |
+| `postgres/bff` | `TF_PG_BFF_USER_PASSWORD` | PostgreSQL, пользователь **`bff_user`** — работа приложения |
+| `postgres/bff` | `TF_PG_BFF_ADMIN_PASSWORD` | PostgreSQL, пользователь **`bff_admin`** — **только миграции** |
 | `kafka/bff` | `TF_KAFKA_BFF_PASSWORD` | Kafka, пользователь `tf-bff` |
 | `rabbit/bff` | `TF_RABBIT_BFF_PASSWORD` | RabbitMQ, пользователь `tf-bff` |
-| `redis` | `TF_REDIS_PASSWORD` | Redis (если сервис им пользуется — иначе убрать путь из `VAULT_SECRET_PATHS`) |
-| `app/tf-bff` | свои (раздел 4) | собственные секреты сервиса |
+| `redis` | `TF_REDIS_PASSWORD` | Redis |
 
-Путь `app/tf-bff` добавлять в `VAULT_SECRET_PATHS` только после того, как администратор завёл в нём секреты (раздел 4) — иначе старт упадёт: пути нет.
+Больше ничего tf-bff не доступно — и не нужно:
 
-Не секреты (остаются в конфигурации сервиса как есть):
+- ❌ **Пользователь `tf`** — суперпользователь базы, его пароль tf-bff недоступен.
+  Ни миграции, ни приложение под ним не работают.
+- ❌ **Путь `app/tf-bff`** — не указывать. Собственных секретов у tf-bff в Vault нет; с этим путём
+  контейнер упадёт (`нет доступа к secret/tf/app/tf-bff`). Если сервису нужны свои секреты
+  (ключи внешних API и т.п.) — передать администратору **имена и назначение, без значений**;
+  после того как их заведут, путь можно добавить.
+
+## 4. Несекретные параметры — в конфигурации как есть
 
 | Что | Значение |
 |---|---|
-| PostgreSQL | `tf-postgres:5432` (контейнер должен быть в сети `think-fast-net`); база `tf`; схема `bff`; пользователи `bff_user` (приложение) / `bff_admin` (миграции) |
-| Kafka | `tf-kafka:9092`, `SASL_PLAINTEXT`, механизм `PLAIN`, пользователь `tf-bff`. Читает `tf.ingest.journal`, `tf.ingest.reference`, `tf.forecast.results`; пишет в `tf.dlq`. `group.id` начинается с `tf-bff` |
-| RabbitMQ | `tf-rabbit:5672`, vhost `tf`, пользователь `tf-bff`. Публикует в `tf.model.commands` и `tf.notifications`. Очереди и exchange не объявляет (или `passive=true`) |
+| Сеть docker | **`think-fast-net`** (external). Сеть `postgree_app-network` больше не нужна |
+| PostgreSQL | `tf-postgres:5432`, база `tf`, схема `bff` |
+| Kafka | `tf-kafka:9092`, `SASL_PLAINTEXT`, механизм `PLAIN`, пользователь `tf-bff`; `group.id` начинается с `tf-bff`; сжатие продюсера `lz4`; сообщение ≤ 1 МБ |
+| Kafka, права | читает `tf.ingest.journal`, `tf.ingest.reference`, `tf.forecast.results`; пишет в `tf.dlq` |
+| RabbitMQ | `tf-rabbit:5672`, vhost `tf`, пользователь `tf-bff`; публикует в `tf.model.commands` и `tf.notifications`; очереди и exchange **не объявлять** (или `passive=true`) |
+| Уведомления | exchange `tf.notifications`, ключ `email` → `tf-mail`, `telegram` → `tf-tg`; формат JSON — [tf.infra/rabbitmq/README.md, «Уведомления»](../../rabbitmq/README.md#уведомления-почта-и-telegram) |
 | Redis | `tf-redis:6379`, пароль обязателен |
+| Порт приложения | **`8080`** — на него nginx проксирует `/api/bff/` |
 
-Контейнер должен быть в сети `think-fast-net`.
+## 5. PostgreSQL: кто что делает
 
-Что уже известно о сервисе:
+| Кто | Пользователь | Может |
+|---|---|---|
+| Инфраструктура | `tf` | создаёт схему `bff`, пользователей `bff_admin` / `bff_user`, выдаёт права — **уже сделано** |
+| Миграции tf-bff | **`bff_admin`** | создавать и менять таблицы в схеме `bff` (владелец схемы) |
+| Приложение tf-bff | **`bff_user`** | `SELECT / INSERT / UPDATE / DELETE`, последовательности; **без DDL** |
 
-- Сервис на .NET, контейнер `tf-bff`, образ `tf-bff:latest`, запуск `dotnet BFF.WebApi.dll`, порт `8080`.
+- У `bff_admin` и `bff_user` `search_path = bff`: имена таблиц можно писать без схемы.
+- Миграции **не** создают базу, схему, роли и не выдают права — только таблицы внутри схемы `bff`.
+- Приложение **не** вызывает `Database.Migrate()` при старте: под `bff_user` нет прав на DDL.
+- Права приложения на новые таблицы появляются автоматически, если таблицы создаёт `bff_admin`.
 
-## 4. Собственные секреты сервиса
+## 6. К какому виду привести
 
-JWT-ключи, SMTP-пароли, токены ботов, ключи внешних API — в `secret/tf/app/tf-bff`.
+### 6.1. Скрипт `vault-entrypoint.sh`
 
-1. Составить список: имя переменной → назначение → откуда значение:
-   **генерируется** (случайная строка, например секрет HMAC) или **выдаётся извне** (токен бота, ключ API, готовый ключ RSA).
-2. Имя: `TF_BFF_<НАЗНАЧЕНИЕ>`, только `A-Z 0-9 _`.
-3. **Многострочные значения** (PEM-ключи, сертификаты) хранятся в Vault в **base64 одной строкой**, имя заканчивается на `_B64`. В контейнер они попадают файлом через `VAULT_FILES` (раздел 5.4) — приложение читает файл, как раньше.
-4. Передать список администратору — **только имена и назначение, без значений**. Он заведёт секреты в Vault на каждом стенде, после этого путь `app/tf-bff` добавляется в `VAULT_SECRET_PATHS`.
+Положить в корень репозитория **как есть** (текст — в конце документа). Переносы строк — LF;
+в `.gitattributes`: `*.sh text eol=lf`.
 
-Значения секретов никогда не передаются через чат, issue, PR или commit.
+### 6.2. Dockerfile
 
-## 5. Что сделать в репозитории
-
-### 5.1. Инвентаризация
-
-Выписать все переменные окружения, `appsettings*.json`, файлы ключей и настройки сервиса и разделить на **секреты** (пароли, токены, ключи, строки подключения с паролем) и **настройки** (хосты, порты, имена пользователей, флаги). Таблицу «переменная → секрет/настройка → откуда после миграции» приложить к PR.
-
-### 5.2. Скрипт `vault-entrypoint.sh`
-
-Положить в корень репозитория как есть (текст — в приложении в конце документа). Переносы строк — **LF**; в `.gitattributes`: `*.sh text eol=lf`.
-
-### 5.3. Dockerfile
-
-Скрипту нужны `bash`, `curl`, `jq`, `base64`. Для образов .NET (`mcr.microsoft.com/dotnet/aspnet`, Debian):
+Скрипту нужны `bash`, `curl`, `jq`. И в образе приложения, и в образе миграций:
 
 ```dockerfile
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
@@ -96,36 +105,52 @@ COPY --from=build /app/publish .
 COPY vault-entrypoint.sh /usr/local/bin/vault-entrypoint.sh
 RUN chmod +x /usr/local/bin/vault-entrypoint.sh
 
-# Было: ENTRYPOINT ["dotnet", "BFF.WebApi.dll"]
 ENTRYPOINT ["/usr/local/bin/vault-entrypoint.sh"]
 CMD ["dotnet", "BFF.WebApi.dll"]
 ```
 
-Для Alpine-образов: `RUN apk add --no-cache bash curl jq`. Секреты в `ARG` / `ENV` / `COPY` Dockerfile — запрещены.
+Образ миграций — так же, с `CMD` запуска миграций. Если миграции идут через `psql`/скрипт в образе
+`postgres`: `apt-get install -y curl jq` там же, `ENTRYPOINT` — `vault-entrypoint.sh`.
+Секреты в `ARG` / `ENV` / `COPY` Dockerfile — запрещены.
 
-### 5.4. docker-compose
+### 6.3. docker-compose
+
+Имена переменных (`ConnectionStrings__Default`, `Kafka__SaslPassword` и т.п.) — **условные**:
+использовать те, что уже читает сервис (секции `appsettings.json` через `__`).
 
 ```yaml
+x-vault: &vault
+  VAULT_ADDR: http://vault:8200
+  VAULT_ROLE_ID: ${VAULT_ROLE_ID:?VAULT_ROLE_ID is not set}
+  VAULT_SECRET_ID: ${VAULT_SECRET_ID:?VAULT_SECRET_ID is not set}
+
 services:
+  # Миграции — под bff_admin, один раз перед запуском приложения.
+  tf-bff-migrations:
+    image: <образ миграций>
+    container_name: tf-bff-migrations
+    restart: "no"
+    networks: [think-fast-net]
+    environment:
+      <<: *vault
+      VAULT_SECRET_PATHS: postgres/bff
+      VAULT_EXPAND: ConnectionStrings__Default
+      # $$ — чтобы compose не подставлял сам: подставит vault-entrypoint.sh при старте
+      ConnectionStrings__Default: "Host=tf-postgres;Port=5432;Database=tf;Username=bff_admin;Password=$${TF_PG_BFF_ADMIN_PASSWORD}"
+
+  # Приложение — под bff_user.
   tf-bff:
+    image: tf-bff:latest
     container_name: tf-bff
     restart: unless-stopped
-    networks:
-      - think-fast-net
+    networks: [think-fast-net]
+    depends_on:
+      tf-bff-migrations:
+        condition: service_completed_successfully
     environment:
-      # Доступ к Vault: из GitHub Secrets через окружение выкатки.
-      VAULT_ADDR: http://vault:8200
-      VAULT_ROLE_ID: ${VAULT_ROLE_ID:?VAULT_ROLE_ID is not set}
-      VAULT_SECRET_ID: ${VAULT_SECRET_ID:?VAULT_SECRET_ID is not set}
-
-      # Какие пути читать (раздел 3). Каждый ключ станет переменной окружения.
+      <<: *vault
       VAULT_SECRET_PATHS: postgres/bff kafka/bff rabbit/bff redis
-
-      # Переменные, в которые подставить секреты при старте.
       VAULT_EXPAND: ConnectionStrings__Default Redis__Configuration Kafka__SaslPassword RabbitMq__Password
-
-      # $$ — чтобы docker compose не подставлял сам: в контейнер попадёт литерал ${...},
-      # его заменит vault-entrypoint.sh значением из Vault.
       ConnectionStrings__Default: "Host=tf-postgres;Port=5432;Database=tf;Username=bff_user;Password=$${TF_PG_BFF_USER_PASSWORD}"
       Redis__Configuration: "tf-redis:6379,password=$${TF_REDIS_PASSWORD}"
       Kafka__SaslPassword: "$${TF_KAFKA_BFF_PASSWORD}"
@@ -136,21 +161,44 @@ networks:
     external: true
 ```
 
-- Имена переменных в примере (`ConnectionStrings__Default`, `Redis__Configuration` и т.п.) — **условные**: использовать те, что уже читает сервис (секции `appsettings.json` через `__`). Менять их не нужно — меняется только источник значения.
-- Если сервис читает переменную с паролем напрямую, `VAULT_EXPAND` не нужен: переменная `TF_…` уже будет в окружении.
-- Нельзя: значения секретов в compose, `env_file:` с секретами, `${VAR:-значение}` для секретов.
+Если миграции идут через `psql` (скрипт), а не через строку подключения .NET:
 
-### 5.5. Workflow выкатки
+```yaml
+    environment:
+      <<: *vault
+      VAULT_SECRET_PATHS: postgres/bff
+      VAULT_EXPAND: PGPASSWORD
+      PGHOST: tf-postgres
+      PGPORT: "5432"
+      PGDATABASE: tf
+      PGUSER: bff_admin
+      PGPASSWORD: "$${TF_PG_BFF_ADMIN_PASSWORD}"
+```
 
-В GitHub Environment `dev` (и `prod`) репозитория администратор кладёт `VAULT_ROLE_ID` и `VAULT_SECRET_ID`. Шаг выкатки передаёт их в окружение `docker compose`:
+Запрещено: значения секретов в compose, `env_file` с секретами, `${VAR:-значение}` для секретов.
+
+### 6.4. Скрипт миграций
+
+- Убрать все упоминания пользователя **`tf`**, проверку «can `tf` connect», создание базы, схемы,
+  ролей, `GRANT`. Проверять подключение **`bff_admin`**.
+- Только создание и изменение таблиц в схеме `bff` (схему можно не указывать — `search_path = bff`).
+- Идемпотентно: повторный запуск на уже мигрированной базе — без ошибок.
+
+### 6.5. Код приложения
+
+- Не вызывать `Database.Migrate()` при старте.
+- Не печатать в лог строки подключения, пароли, переменные окружения.
+- Не генерировать и не подставлять секреты «по умолчанию», если их нет: на стенде всё приходит
+  из Vault, отсутствие — ошибка конфигурации, сервис должен падать с понятным сообщением.
+
+### 6.6. Workflow выкатки
 
 ```yaml
 jobs:
   deploy:
     environment: dev          # prod — для выкатки на prod
-    runs-on: ...              # как сейчас
     steps:
-      # ... сборка образа как сейчас ...
+      # ... сборка образов как сейчас ...
       - name: Deploy
         env:
           VAULT_ROLE_ID: ${{ secrets.VAULT_ROLE_ID }}
@@ -158,52 +206,44 @@ jobs:
         run: docker compose up -d
 ```
 
-После успешной выкатки — удалить прежние секреты сервиса из GitHub Secrets и `.env` на сервере (сообщить администратору, что можно удалять).
+`VAULT_ROLE_ID` / `VAULT_SECRET_ID` для tf-bff уже лежат (или будут положены администратором)
+в GitHub → Settings → Environments → `dev` / `prod`.
 
-### 5.6. PostgreSQL: приложение и миграции — разные пользователи
+### 6.7. Удалить старое
 
-| Пользователь | Для чего | Права |
+- Все прежние секреты tf-bff из GitHub Secrets (пароли БД, Kafka, RabbitMQ, Redis) — кроме пары `VAULT_…`.
+- `.env` с паролями на сервере и в репозитории; в репозитории — `.env.example` с `CHANGE_ME`,
+  `.env` в `.gitignore`.
+- Подключение к `postgree_app-network`.
+
+### 6.8. Локальная разработка
+
+Без `VAULT_ROLE_ID` скрипт Vault не трогает и запускает приложение с переменными как есть —
+локально работает `.env` с тестовыми значениями.
+
+## 7. Критерии приёмки
+
+1. `tf-bff-migrations`: в логе `secret/tf/postgres/bff: загружено`, затем код выхода `0`.
+2. `tf-bff`: в логе `загружено` по `postgres/bff`, `kafka/bff`, `rabbit/bff`, `redis`, затем `запуск приложения`.
+3. `docker exec tf-nginx wget -qO- http://tf-bff:8080/health` отвечает; `https://<домен>/api/bff/…` работает.
+4. `docker restart tf-bff` — сервис снова поднимается (секреты читаются заново).
+5. Таблицы схемы `bff` принадлежат `bff_admin`; приложение работает под `bff_user`.
+6. Нигде нет паролей: ни в репозитории, ни в образе, ни в GitHub Secrets (кроме пары `VAULT_…`),
+   ни в `docker inspect` (там только `${…}`).
+
+## 8. Если не стартует
+
+| В логе | Причина | Что делать |
 |---|---|---|
-| `bff_user` | **приложение** | `SELECT/INSERT/UPDATE/DELETE`, последовательности; **без DDL** |
-| `bff_admin` | **миграции** (EF Core) | владелец схемы `bff`, DDL |
+| `password authentication failed for user "tf"` | подключение под `tf` | заменить на `bff_admin` (миграции) / `bff_user` (приложение) |
+| `password authentication failed for user "bff_…"` | перепутаны переменные | `_ADMIN_` — миграции, `_USER_` — приложение; проверить `$$` и `VAULT_EXPAND` |
+| `нет доступа к secret/tf/<путь>` | путь не из таблицы раздела 3 (часто `app/tf-bff`) | убрать путь; если нужен — запрос администратору |
+| `Vault недоступен, запечатан или неверный VAULT_ROLE_ID/VAULT_SECRET_ID` | неверные значения в GitHub или Vault запечатан | проверить Environment secrets; иначе — администратору |
+| `в X остались неподставленные ${...}` | имя в `${…}` не совпадает с ключом из Vault | сверить с таблицей раздела 3 |
+| `could not translate host name "tf-postgres"` | контейнер не в `think-fast-net` | добавить сеть |
+| `permission denied for schema bff` / `must be owner` | DDL под `bff_user` | миграции — только под `bff_admin` |
 
-- У обоих `search_path = bff`: имена таблиц можно писать без схемы.
-- `Database.Migrate()` при старте приложения под `bff_user` **упадёт** (нет прав на DDL). Миграции — под `bff_admin` с паролем `TF_PG_BFF_ADMIN_PASSWORD`: отдельный контейнер/шаг миграций перед запуском приложения или отдельная строка подключения только для миграций.
-- Рабочая строка подключения приложения — только под `bff_user`.
-- Таблицы, созданные не тем пользователем, инфраструктура при следующей выкатке передаст `bff_admin` и выдаст права — но правильно сразу создавать их под `bff_admin`.
-
-### 5.7. Локальная разработка
-
-Без `VAULT_ROLE_ID` скрипт Vault не трогает и запускает приложение с переменными как есть. Локально — `.env` (в `.gitignore`) с тестовыми значениями; в репозитории — `.env.example` с `CHANGE_ME`.
-
-### 5.8. Логи
-
-Не печатать строки подключения, пароли, ключи и переменные окружения (ни при старте, ни при ошибке). Скрипт сам значения не выводит — только имена путей и файлов.
-
-## 6. Критерии приёмки
-
-1. В репозитории нет действующих секретов (`git grep` по фрагментам паролей пуст; `.env` в `.gitignore`). Если секрет был в истории git — сообщить администратору, его сменят.
-2. В GitHub Secrets — только `VAULT_ROLE_ID`, `VAULT_SECRET_ID` (в Environments `dev` / `prod`).
-3. На сервере нет `.env` с паролями сервиса; выкатка на dev проходит, сервис работает.
-4. В логе старта контейнера: `secret/tf/<путь>: загружено` по каждому пути и `запуск приложения`.
-5. `docker restart tf-bff` — сервис снова поднимается и работает (секреты читаются заново).
-6. `docker inspect` контейнера не содержит паролей — только `VAULT_ROLE_ID` / `VAULT_SECRET_ID` и строки с `${...}`.
-7. Приложение работает под `bff_user`, миграции выполняются под `bff_admin`.
-
-## 7. Чего не делать
-
-- Не использовать чужие пути и учётки (другого сервиса, `admin`, `tf`) — политика их не пустит.
-- Не класть токен Vault (`hvs.…`) в конфигурацию — только `VAULT_ROLE_ID` / `VAULT_SECRET_ID`.
-- Не выводить секреты в лог, не передавать их значения в чатах, issue, PR.
-
-## 8. Что передать администратору
-
-Только имена, **никогда значения**:
-
-- список собственных секретов сервиса (раздел 4) — имя, назначение, «генерируется» или «выдаётся извне»;
-- если нужен доступ к ещё одному пути Vault (например, сервис начал пользоваться Redis или RabbitMQ);
-- если секрет когда-то был закоммичен в git — его нужно сменить;
-- когда выкатка на dev прошла — что старые секреты из GitHub и `.env` можно удалять.
+Администратору — только имена путей и переменных, **никогда значения**.
 
 ## Приложение: `vault-entrypoint.sh`
 

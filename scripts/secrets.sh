@@ -21,17 +21,24 @@ set -Eeuo pipefail
 LOG_TAG="SECRETS"
 source "$(dirname "$0")/lib/vault.sh"
 
+# Код 2 — не хватает генерируемых секретов (init). Незаведённые manual (SMTP, токен бота) только
+# показываются: init их не создаст, а без них не выкатываются лишь их сервисы (mailing, telegram).
 cmd_status() {
-    local svc path key gen missing=0
+    local svc path key gen missing=0 manual=0
     printf '%-10s %-16s %-30s %s\n' "SERVICE" "PATH" "KEY" "STATUS"
     while read -r svc path key gen; do
         if kv_get "$path" "$key" > /dev/null; then
             printf '%-10s %-16s %-30s %s\n' "$svc" "$path" "$key" "ok"
+        elif [ "$gen" = "manual" ]; then
+            printf '%-10s %-16s %-30s %s\n' "$svc" "$path" "$key" "MISSING (manual)"
+            manual=$((manual + 1))
         else
             printf '%-10s %-16s %-30s %s\n' "$svc" "$path" "$key" "MISSING"
             missing=$((missing + 1))
         fi
-    done < <(manifest "${1:-}")
+    done < <(if [ -n "${1:-}" ]; then service_manifest "$1"; else manifest; fi)
+    [ "$manual" -eq 0 ] \
+        || log "manual missing: $manual — веб-интерфейс Vault или scripts/secrets.sh set <КЛЮЧ>"
     [ "$missing" -eq 0 ] || { log "missing: $missing (scripts/secrets.sh init)"; exit 2; }
 }
 
@@ -135,11 +142,11 @@ cmd_get() {
 
 cmd_env() {
     local folder="${1:?usage: env <folder>}" svc path key gen value
-    [ -n "$(manifest "$folder")" ] || die "в secrets.conf нет секретов для '$folder'"
+    [ -n "$(service_manifest "$folder")" ] || die "в secrets.conf нет секретов для '$folder'"
     while read -r svc path key gen; do
         value="$(kv_get "$path" "$key")" || die "$key нет в Vault"
         printf 'export %s=%q\n' "$key" "$value"
-    done < <(manifest "$folder")
+    done < <(service_manifest "$folder")
 }
 
 command -v openssl > /dev/null || die "openssl не установлен"
