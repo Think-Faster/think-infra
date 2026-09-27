@@ -177,4 +177,12 @@ esac
 vault_require_unsealed
 vault_require_token
 
+# Все команды setup.sh создают политики, роли и токены — нужен root. Личный токен (tf-admin)
+# проходит проверку выше, но дальше получил бы невнятное "permission denied".
+if ! vault_cmd token lookup -format=json 2> /dev/null | grep -q '"root"'; then
+    die "нужен root-токен (короткий, ~28 символов), а в VAULT_TOKEN другой — например личный tf-admin.
+       Root: 'Initial Root Token' из инициализации; если отозван — выпустить ключами распечатывания
+       (QUICK_START.md, раздел 13, «Нужен root-токен»)."
+fi
+
 "cmd_${cmd//-/_}" "$@"
