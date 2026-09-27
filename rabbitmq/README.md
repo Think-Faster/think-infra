@@ -120,7 +120,8 @@ docker compose up tf-rabbit-init
 ## Уведомления: почта и Telegram
 
 Потребители живут в этом репозитории: [mailing/](../mailing/README.md) — контейнер `tf-mail`,
-[telegram/](../telegram/README.md) — `tf-tg`. Публикует `tf-bff`.
+[telegram/](../telegram/README.md) — `tf-tg`. Публикует `tf-bff`; ТЗ для него с примером на .NET —
+[docs/notify-tz/tf-bff.md](../docs/notify-tz/tf-bff.md).
 
 | Кто | Учётка брокера | Пароль в Vault | Что делает |
 |---|---|---|---|

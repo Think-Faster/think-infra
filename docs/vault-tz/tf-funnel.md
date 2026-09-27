@@ -35,7 +35,8 @@ exec приложение — видит готовые переменные о�
 | Путь (`VAULT_SECRET_PATHS`) | Переменная | Что это |
 |---|---|---|
 | `kafka/funnel` | `TF_KAFKA_FUNNEL_PASSWORD` | Kafka, пользователь `tf-funnel` |
-| `app/tf-funnel` | свои (раздел 4) | собственные секреты сервиса (ключи внешних источников данных и т.п.) |
+| `redis` | `TF_REDIS_PASSWORD` | Redis `tf-redis:6379` — аудит (потоки `audit`, `audit:requests`) |
+| `app/tf-funnel` | `TF_FUNNEL_SERVICE_SUBS` (раздел 4) | `sub` техучёток шины, которым разрешён `POST /events`; заводится руками |
 
 Путь `app/tf-funnel` добавлять в `VAULT_SECRET_PATHS` только после того, как администратор завёл в нём секреты (раздел 4) — иначе старт упадёт: пути нет.
 
@@ -50,7 +51,9 @@ exec приложение — видит готовые переменные о�
 Что уже известно о сервисе:
 
 - Сервис новый: если Dockerfile и workflow выкатки ещё нет — сразу делать по этому ТЗ.
-- Доступа к PostgreSQL, RabbitMQ и Redis у сервиса нет. Если понадобятся — запрос администратору (раздел 8).
+- Доступ к Redis есть (путь `redis`, для аудита). Доступа к PostgreSQL и RabbitMQ нет. Если понадобятся — запрос администратору (раздел 8).
+- Сервис сам читает Vault по AppRole (`VAULT_ADDR`, `VAULT_ROLE_ID`, `VAULT_SECRET_ID`) — `vault-entrypoint.sh`
+  ему не нужен. Встраивание в стенд (nginx, том, настройки) — [docs/funnel-tz/tf-funnel.md](../funnel-tz/tf-funnel.md).
 
 ## 4. Собственные секреты сервиса
 
