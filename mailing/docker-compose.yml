@@ -1,0 +1,43 @@
+name: tf-mail
+
+services:
+
+  # Читает очередь tf.notify.email (RabbitMQ) и отправляет письма через SMTP.
+  # BFF публикует уведомления в exchange tf.notifications с ключом email (rabbitmq/README.md).
+  tf-mail:
+    container_name: tf-mail
+
+    build: .
+    image: tf-mail:local
+
+    environment:
+      # SMTP — secret/tf/app/tf-mail. Заводятся руками (веб-интерфейс Vault или scripts/secrets.sh set).
+      TF_MAIL_SMTP_HOST: ${TF_MAIL_SMTP_HOST:?TF_MAIL_SMTP_HOST is not set}
+      TF_MAIL_SMTP_PORT: ${TF_MAIL_SMTP_PORT:?TF_MAIL_SMTP_PORT is not set}
+      TF_MAIL_SMTP_USER: ${TF_MAIL_SMTP_USER:?TF_MAIL_SMTP_USER is not set}
+      TF_MAIL_SMTP_PASSWORD: ${TF_MAIL_SMTP_PASSWORD:?TF_MAIL_SMTP_PASSWORD is not set}
+
+      # Брокер: учётка tf-notify-email, читает только tf.notify.email (rabbitmq/users.conf).
+      TF_RABBIT_URL: amqp://tf-rabbit:5672/tf
+      TF_RABBIT_USER: tf-notify-email
+      TF_RABBIT_EMAIL_PASSWORD: ${TF_RABBIT_EMAIL_PASSWORD:?TF_RABBIT_EMAIL_PASSWORD is not set}
+
+      # Redis: кому уже ушло по notice_id — чтобы повтор из очереди не слал письмо второй раз.
+      TF_REDIS_URL: redis://tf-redis:6379/0
+      TF_REDIS_PASSWORD: ${TF_REDIS_PASSWORD:?TF_REDIS_PASSWORD is not set}
+
+      # Имя отправителя в письме. Адрес — TF_MAIL_SMTP_USER (Gmail подставляет адрес учётки сам).
+      MAIL_FROM_NAME: Think Faster — оповещения
+
+    # Портов нет: сервис только читает очередь.
+    networks:
+      - think-fast-net
+
+    mem_limit: 256m
+
+    restart: unless-stopped
+
+
+networks:
+  think-fast-net:
+    external: true

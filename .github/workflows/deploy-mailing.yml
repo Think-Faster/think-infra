@@ -1,0 +1,20 @@
+name: deploy mailing
+
+on:
+  push:
+    branches: [dev, prod]
+    paths:
+      - mailing/**
+      - scripts/**
+      - secrets.conf
+      - stands/**
+      - .github/workflows/deploy.yml
+      - .github/workflows/deploy-mailing.yml
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy.yml
+    with:
+      service: mailing
+    secrets: inherit

@@ -20,7 +20,8 @@ http {
 
         listen 80;
 
-        server_name ${SERVER_NAMES};
+        # Сайт и поддомен Vault (VAULT_DOMAIN): проверка Let's Encrypt и редирект на HTTPS для всех имён.
+        server_name ${HTTP_SERVER_NAMES};
 
 
         # Let's Encrypt ACME challenge
@@ -147,4 +148,12 @@ http {
             proxy_set_header X-Forwarded-Proto $scheme;
         }
     }
+
+
+    # ==================================================
+    # Дополнительные сайты: веб-интерфейс Vault (tf.d/vault.conf).
+    # Файлы генерирует scripts/generate-nginx-config.sh по настройкам стенда.
+    # ==================================================
+
+    include /etc/nginx/tf.d/*.conf;
 }

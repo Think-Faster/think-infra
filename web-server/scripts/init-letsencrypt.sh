@@ -47,10 +47,10 @@ mkdir -p certbot/www
 # Choose mode
 # ==================================================
 
-# Имена сертификата: DOMAIN и DOMAIN_ALIASES (через запятую). Папка — live/${DOMAIN}.
+# Имена сертификата: DOMAIN, DOMAIN_ALIASES (через запятую) и VAULT_DOMAIN. Папка — live/${DOMAIN}.
 domain_args=(--cert-name "${DOMAIN}" --domain "${DOMAIN}")
 aliases="${DOMAIN_ALIASES:-}"
-for alias in ${aliases//,/ }; do
+for alias in ${aliases//,/ } ${VAULT_DOMAIN:-}; do
     domain_args+=(--domain "$alias")
 done
 

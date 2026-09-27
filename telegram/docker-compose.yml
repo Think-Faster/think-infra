@@ -1,0 +1,38 @@
+name: tf-tg
+
+services:
+
+  # Читает очередь tf.notify.telegram (RabbitMQ) и отправляет сообщения от бота Telegram.
+  # BFF публикует уведомления в exchange tf.notifications с ключом telegram (rabbitmq/README.md).
+  tf-tg:
+    container_name: tf-tg
+
+    build: .
+    image: tf-tg:local
+
+    environment:
+      # Токен бота от @BotFather — secret/tf/app/tf-tg. Заводится руками
+      # (веб-интерфейс Vault или scripts/secrets.sh set TF_TG_BOT_TOKEN).
+      TF_TG_BOT_TOKEN: ${TF_TG_BOT_TOKEN:?TF_TG_BOT_TOKEN is not set}
+
+      # Брокер: учётка tf-notify-telegram, читает только tf.notify.telegram (rabbitmq/users.conf).
+      TF_RABBIT_URL: amqp://tf-rabbit:5672/tf
+      TF_RABBIT_USER: tf-notify-telegram
+      TF_RABBIT_TELEGRAM_PASSWORD: ${TF_RABBIT_TELEGRAM_PASSWORD:?TF_RABBIT_TELEGRAM_PASSWORD is not set}
+
+      # Redis: кому уже ушло по notice_id — чтобы повтор из очереди не слал сообщение второй раз.
+      TF_REDIS_URL: redis://tf-redis:6379/0
+      TF_REDIS_PASSWORD: ${TF_REDIS_PASSWORD:?TF_REDIS_PASSWORD is not set}
+
+    # Портов нет: сервис только читает очередь. Наружу ходит к api.telegram.org.
+    networks:
+      - think-fast-net
+
+    mem_limit: 256m
+
+    restart: unless-stopped
+
+
+networks:
+  think-fast-net:
+    external: true

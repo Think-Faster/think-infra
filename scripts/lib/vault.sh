@@ -70,6 +70,22 @@ manifest() {
     '
 }
 
+# Секреты из чужих папок secrets.conf, которые нужны сервису этого репозитория (учётка брокера, Redis).
+# Ключ в secrets.conf один раз — у сервиса-владельца; здесь только кто ещё его получает при выкатке.
+declare -A SHARED_SECRETS=(
+    [mailing]="TF_RABBIT_EMAIL_PASSWORD TF_REDIS_PASSWORD"
+    [telegram]="TF_RABBIT_TELEGRAM_PASSWORD TF_REDIS_PASSWORD"
+)
+
+# service_manifest <папка> — строки манифеста, которые получает сервис: свои и SHARED_SECRETS.
+service_manifest() {
+    local key
+    manifest "$1"
+    for key in ${SHARED_SECRETS[$1]:-}; do
+        manifest | awk -v key="$key" '$3 == key'
+    done
+}
+
 # lookup_key <КЛЮЧ> — находит ключ в манифесте (ключи уникальны)
 # и заполняет KEY_SERVICE, KEY_PATH, KEY_GENERATOR. Вызывать без $(...): die должен завершить скрипт.
 lookup_key() {

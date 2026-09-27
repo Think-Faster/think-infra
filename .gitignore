@@ -7,3 +7,8 @@ kafka/.env
 rabbitmq/.env
 hashicorp/backups
 hashicorp/.backup-token
+
+# сервисы уведомлений: кэш Python и локальные окружения
+__pycache__/
+.venv/
+venv/
