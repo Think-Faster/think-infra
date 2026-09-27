@@ -43,6 +43,10 @@ for var in "${required_vars[@]}"; do
     fi
 done
 
+# Воронка (tf-funnel): необязательны — стенд без них получает имя контейнера и порт по умолчанию.
+FUNNEL_HOST="${FUNNEL_HOST:-tf-funnel}"
+FUNNEL_PORT="${FUNNEL_PORT:-8000}"
+
 
 # ==================================================
 # Check certificate
@@ -93,11 +97,12 @@ render() {
 
 # Пишем через временный файл: nginx.conf смонтирован в контейнер, частичный файл ему не нужен.
 render nginx/nginx.conf.template \
-    '${DOMAIN} ${SERVER_NAMES} ${HTTP_SERVER_NAMES} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT}' \
+    '${DOMAIN} ${SERVER_NAMES} ${HTTP_SERVER_NAMES} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT} ${FUNNEL_HOST} ${FUNNEL_PORT}' \
     -e "DOMAIN=$DOMAIN" -e "SERVER_NAMES=$SERVER_NAMES" -e "HTTP_SERVER_NAMES=$HTTP_SERVER_NAMES" \
     -e "FRONTEND_HOST=$FRONTEND_HOST" -e "FRONTEND_PORT=$FRONTEND_PORT" \
     -e "AUTH_HOST=$AUTH_HOST" -e "AUTH_PORT=$AUTH_PORT" \
     -e "BFF_HOST=$BFF_HOST" -e "BFF_PORT=$BFF_PORT" \
+    -e "FUNNEL_HOST=$FUNNEL_HOST" -e "FUNNEL_PORT=$FUNNEL_PORT" \
     > nginx/nginx.conf.tmp
 
 # cat, а не mv: сохраняем inode файла, смонтированного в работающий контейнер.

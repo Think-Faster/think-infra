@@ -195,6 +195,7 @@ docker ps
 | `FRONTEND_HOST`, `FRONTEND_PORT` | имя контейнера сайта и его порт | `tf-front`, `80` |
 | `AUTH_HOST`, `AUTH_PORT` | имя контейнера tf-auth и его порт | `tf-auth`, `8081` |
 | `BFF_HOST`, `BFF_PORT` | имя контейнера tf-bff и его порт | `tf-bff`, `8080` |
+| `FUNNEL_HOST`, `FUNNEL_PORT` | имя контейнера tf-funnel и его порт: окно «Логи» (`/api/funnel/log`, `/api/funnel/stream`). Не заданы — `tf-funnel`, `8000` | `tf-funnel`, `8000` |
 
 ⚠️ **Паролей в этом файле быть не должно.** Если вписать туда пароль, выкатка остановится с ошибкой.
 

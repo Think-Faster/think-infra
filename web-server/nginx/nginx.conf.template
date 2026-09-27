@@ -11,6 +11,12 @@ http {
     # (для них вернётся 502), и видит новый IP после пересоздания контейнера.
     resolver 127.0.0.11 valid=10s ipv6=off;
 
+    # WebSocket через прокси: Connection: upgrade только для запросов с Upgrade.
+    map $http_upgrade $funnel_connection {
+        default upgrade;
+        ''      '';
+    }
+
 
     # ==================================================
     # HTTP
@@ -121,6 +127,48 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # --------------------------------------------------
+        # Окно «Логи» (tf-funnel)
+        #
+        # /api/funnel/log     — история показаний
+        # /api/funnel/stream  — WebSocket живых показаний
+        #       ↓
+        # ${FUNNEL_HOST}:${FUNNEL_PORT}
+        #
+        # Остальное у воронки (приём шины, состояние каналов) наружу не открыто.
+        # --------------------------------------------------
+
+        location ~ ^/api/funnel/(log|stream)$ {
+
+            set $funnel_upstream http://${FUNNEL_HOST}:${FUNNEL_PORT};
+
+            rewrite ^/api/funnel/(.*)$ /$1 break;
+
+            proxy_pass $funnel_upstream;
+
+            proxy_http_version 1.1;
+
+            # WebSocket /stream: без Upgrade nginx отдаст обычный HTTP, и браузер не подключится.
+            proxy_set_header Upgrade $http_upgrade;
+
+            proxy_set_header Connection $funnel_connection;
+
+            proxy_set_header Host $host;
+
+            proxy_set_header X-Real-IP $remote_addr;
+
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Окно «Логи» держит соединение часами; воронка шлёт ping раз в 30 с.
+            proxy_read_timeout 1h;
+
+            proxy_send_timeout 1h;
+
+            proxy_buffering off;
         }
 
         # --------------------------------------------------
