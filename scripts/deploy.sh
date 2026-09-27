@@ -225,6 +225,13 @@ deploy_web_server() {
         [ "${!var:-CHANGE_ME}" != "CHANGE_ME" ] || die "$var не задан в stands/$TF_STAND.env"
     done
 
+    # Проверочные файлы Let's Encrypt (webroot) nginx отдаёт от своего пользователя: каталог должен
+    # читаться всеми, иначе проверка и продление падают с 403. chmod в контейнере — от root,
+    # при любом владельце каталога и без sudo на хосте.
+    mkdir -p certbot/www
+    docker run --rm --entrypoint chmod -v "$PWD/certbot/www:/var/www/certbot" certbot/certbot:latest \
+        -R a+rX /var/www/certbot
+
     # Первый запуск: сертификата нет, nginx ещё не занимает порт 80 (standalone).
     # Добавилось имя в DOMAIN_ALIASES: сертификат расширяется через работающий nginx (webroot).
     missing="$(cert_missing_names | tr '\n' ' ')"
