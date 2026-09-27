@@ -65,6 +65,7 @@ exec приложение — видит готовые переменные о�
 | Kafka | `tf-kafka:9092`, `SASL_PLAINTEXT`, механизм `PLAIN`, пользователь `tf-bff`; `group.id` начинается с `tf-bff`; сжатие продюсера `lz4`; сообщение ≤ 1 МБ |
 | Kafka, права | читает `tf.ingest.journal`, `tf.ingest.reference`, `tf.forecast.results`; пишет в `tf.dlq` |
 | RabbitMQ | `tf-rabbit:5672`, vhost `tf`, пользователь `tf-bff`; публикует в `tf.model.commands` и `tf.notifications`; очереди и exchange **не объявлять** (или `passive=true`) |
+| Уведомления | exchange `tf.notifications`, ключ `email` → `tf-mail`, `telegram` → `tf-tg`; формат JSON — [tf.infra/rabbitmq/README.md, «Уведомления»](../../rabbitmq/README.md#уведомления-почта-и-telegram) |
 | Redis | `tf-redis:6379`, пароль обязателен |
 | Порт приложения | **`8080`** — на него nginx проксирует `/api/bff/` |
 

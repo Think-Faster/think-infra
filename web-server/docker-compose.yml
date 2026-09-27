@@ -17,6 +17,8 @@ services:
 
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Дополнительные сайты (Vault UI), генерирует scripts/generate-nginx-config.sh.
+      - ./nginx/tf.d:/etc/nginx/tf.d:ro
       - ./certbot/conf:/etc/letsencrypt:ro
       - ./certbot/www:/var/www/certbot:ro
 

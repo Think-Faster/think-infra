@@ -78,18 +78,26 @@ aliases="${DOMAIN_ALIASES:-}"
 SERVER_NAMES="$DOMAIN ${aliases//,/ }"
 SERVER_NAMES="${SERVER_NAMES% }"
 
+# Порт 80 отвечает и за поддомен Vault: проверка Let's Encrypt и редирект на HTTPS.
+HTTP_SERVER_NAMES="$SERVER_NAMES${VAULT_DOMAIN:+ $VAULT_DOMAIN}"
+
 # envsubst берётся из образа nginx: на хосте gettext может не быть.
 # Подставляются только перечисленные переменные, $host и т.п. остаются для nginx.
-# Пишем через временный файл: nginx.conf смонтирован в контейнер, частичный файл ему не нужен.
 # Значения — явно (не секреты): docker может вызываться через sudo, который очищает окружение.
-docker run --rm -i \
-    -e "DOMAIN=$DOMAIN" -e "SERVER_NAMES=$SERVER_NAMES" \
+# render <шаблон> <имена переменных> <-e VAR=...>...
+render() {
+    local template="$1" names="$2"
+    shift 2
+    docker run --rm -i "$@" nginx:1.29-alpine envsubst "$names" < "$template"
+}
+
+# Пишем через временный файл: nginx.conf смонтирован в контейнер, частичный файл ему не нужен.
+render nginx/nginx.conf.template \
+    '${DOMAIN} ${SERVER_NAMES} ${HTTP_SERVER_NAMES} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT}' \
+    -e "DOMAIN=$DOMAIN" -e "SERVER_NAMES=$SERVER_NAMES" -e "HTTP_SERVER_NAMES=$HTTP_SERVER_NAMES" \
     -e "FRONTEND_HOST=$FRONTEND_HOST" -e "FRONTEND_PORT=$FRONTEND_PORT" \
     -e "AUTH_HOST=$AUTH_HOST" -e "AUTH_PORT=$AUTH_PORT" \
     -e "BFF_HOST=$BFF_HOST" -e "BFF_PORT=$BFF_PORT" \
-    nginx:1.29-alpine \
-    envsubst '${DOMAIN} ${SERVER_NAMES} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT}' \
-    < nginx/nginx.conf.template \
     > nginx/nginx.conf.tmp
 
 # cat, а не mv: сохраняем inode файла, смонтированного в работающий контейнер.
@@ -97,8 +105,39 @@ cat nginx/nginx.conf.tmp > nginx/nginx.conf
 rm -f nginx/nginx.conf.tmp
 
 
+# ==================================================
+# Vault UI (tf.d/vault.conf)
+# ==================================================
+
+# Каталог смонтирован в контейнер целиком: файлы в нём можно заменять и удалять.
+mkdir -p nginx/tf.d
+
+if [ -n "${VAULT_DOMAIN:-}" ]; then
+    echo "==> Generating tf.d/vault.conf (https://$VAULT_DOMAIN)..."
+
+    # VAULT_ALLOW: адреса и подсети через запятую. Пусто — доступ всем, защита — токен Vault.
+    VAULT_ACCESS=""
+    allow="${VAULT_ALLOW:-}"
+    for net in ${allow//,/ }; do
+        if [[ ! "$net" =~ ^[0-9A-Fa-f:.]+(/[0-9]{1,3})?$ ]]; then
+            echo "ERROR: VAULT_ALLOW: '$net' — не адрес и не подсеть (stands/<стенд>.env)."
+            exit 1
+        fi
+        VAULT_ACCESS+="allow $net; "
+    done
+    [ -z "$VAULT_ACCESS" ] || VAULT_ACCESS+="deny all;"
+
+    render nginx/vault.conf.template '${DOMAIN} ${VAULT_DOMAIN} ${VAULT_ACCESS}' \
+        -e "DOMAIN=$DOMAIN" -e "VAULT_DOMAIN=$VAULT_DOMAIN" -e "VAULT_ACCESS=$VAULT_ACCESS" \
+        > nginx/tf.d/vault.conf
+else
+    rm -f nginx/tf.d/vault.conf
+fi
+
+
 echo "==> nginx.conf generated successfully."
 
 echo
-echo "Generated file:"
+echo "Generated files:"
 echo "  nginx/nginx.conf"
+ls nginx/tf.d/*.conf 2> /dev/null | sed 's/^/  /' || true

@@ -1,0 +1,5 @@
+dnspython==2.8.0
+email-validator==2.3.0
+idna==3.20
+pika==1.4.4
+redis==8.1.0

@@ -11,9 +11,12 @@
 | [kafka](kafka/README.md) | Kafka (KRaft, один брокер) | `secret/tf/kafka` | `deploy-kafka.yml` |
 | [rabbitmq](rabbitmq/README.md) | RabbitMQ | `secret/tf/rabbit` | `deploy-rabbitmq.yml` |
 | [redis](redis) | Redis | `secret/tf/redis` | `deploy-redis.yml` |
-| [web-server](web-server) | nginx + Let's Encrypt | — | `deploy-web-server.yml` |
+| [web-server](web-server) | nginx + Let's Encrypt, веб-интерфейс Vault (`VAULT_DOMAIN`) | — | `deploy-web-server.yml` |
+| [mailing](mailing/README.md) | `tf-mail` — письма из очереди `tf.notify.email` через SMTP | `app/tf-mail`, `rabbit/email`, `redis` | `deploy-mailing.yml` |
+| [telegram](telegram/README.md) | `tf-tg` — сообщения бота из очереди `tf.notify.telegram` | `app/tf-tg`, `rabbit/telegram`, `redis` | `deploy-telegram.yml` |
 
-Папка `samba` в выкатку не входит.
+Папка `samba` в выкатку не входит. `mailing` и `telegram` не входят в `bootstrap-stand.sh`: им нужны
+секреты, которые заводятся руками (SMTP, токен бота), — после них выкатываются обычным пушем или Run workflow.
 
 Стенды: **dev** и **prod**. Ветки: фича → `dev` → `prod` → `master`.
 Пуш в `dev` выкатывает изменённые сервисы на dev-стенд, пуш в `prod` — на prod.
@@ -85,6 +88,10 @@ scripts/secrets.sh set TF_REDIS_PASSWORD    # своё значение (спр�
 scripts/secrets.sh get TF_RABBIT_BFF_PASSWORD   # передать владельцу сервиса
 eval "$(scripts/secrets.sh env rabbitmq)"   # в текущую оболочку, для ручных docker compose
 ```
+
+Секреты с генератором `manual` (SMTP для `tf-mail`, токен бота `tf-tg`) `init` не создаёт — их вводят
+руками: `scripts/secrets.sh set <КЛЮЧ>` или в веб-интерфейсе Vault (`https://<VAULT_DOMAIN>`,
+см. [hashicorp/README.md](hashicorp/README.md#веб-интерфейс)). `status` показывает их как `MISSING (manual)`.
 
 ### Добавить секрет
 
@@ -250,6 +257,7 @@ Workflow не запускаются на `pull_request`, поэтому код 
   (`auth_user` / `auth_user`). Первая выкатка `postgree` выставит пароли из Vault —
   до неё передать новые пароли сервисам auth и bff (`scripts/secrets.sh get TF_PG_AUTH_USER_PASSWORD`).
 - **У Redis появился пароль.** Клиенты (bff и др.) без пароля перестанут подключаться после выкатки `redis`.
-- **Vault слушает только localhost.** Веб-интерфейс — через SSH-туннель (см. hashicorp/README.md).
+- **Vault слушает только localhost.** Веб-интерфейс — поддомен `VAULT_DOMAIN` через nginx или SSH-туннель
+  (см. hashicorp/README.md).
 - **Старый cron бэкапа PostgreSQL** (`postgree/cron-control.sh`, путь `/opt/tf`) заменён задачей,
   которую ставит `bootstrap-stand.sh`. Старую запись удалить: `crontab -e`.

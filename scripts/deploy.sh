@@ -2,7 +2,7 @@
 # Выкатка одного сервиса инфраструктуры на стенд. Запускается GitHub Actions
 # на self-hosted runner стенда (.github/workflows/deploy.yml) или вручную на сервере.
 #
-#   TF_STAND=<dev|prod> scripts/deploy.sh <postgree|kafka|rabbitmq|redis|web-server|hashicorp>
+#   TF_STAND=<dev|prod> scripts/deploy.sh <postgree|kafka|rabbitmq|redis|web-server|mailing|telegram|hashicorp>
 #
 # hashicorp (сам Vault) через CI не выкатывается: после перезапуска он запечатан.
 # Его выкатывает scripts/bootstrap-stand.sh или администратор вручную.
@@ -31,10 +31,10 @@ umask 022
 LOG_TAG="DEPLOY"
 source "$(dirname "$0")/lib/vault.sh"
 
-SERVICE="${1:?usage: TF_STAND=<dev|prod> $0 <postgree|kafka|rabbitmq|redis|web-server|hashicorp>}"
+SERVICE="${1:?usage: TF_STAND=<dev|prod> $0 <postgree|kafka|rabbitmq|redis|web-server|mailing|telegram|hashicorp>}"
 
 case "$SERVICE" in
-    postgree|kafka|rabbitmq|redis|web-server|hashicorp) ;;
+    postgree|kafka|rabbitmq|redis|web-server|mailing|telegram|hashicorp) ;;
     *) die "неизвестный сервис: $SERVICE" ;;
 esac
 
@@ -73,7 +73,7 @@ mask() {
 load_secrets() {
     local svc path key gen value count=0
 
-    if [ -z "$(manifest "$SERVICE")" ]; then
+    if [ -z "$(service_manifest "$SERVICE")" ]; then
         log "no secrets for $SERVICE"
         return
     fi
@@ -94,18 +94,24 @@ load_secrets() {
     vault_require_token
 
     while read -r svc path key gen; do
-        value="$(kv_get "$path" "$key")" \
-            || die "секрета $key нет в Vault ($KV_MOUNT/$KV_PREFIX/$path). На сервере: scripts/secrets.sh init $SERVICE"
+        if ! value="$(kv_get "$path" "$key")"; then
+            [ "$gen" != "manual" ] \
+                || die "секрета $key нет в Vault ($KV_MOUNT/$KV_PREFIX/$path) — он заводится руками:" \
+                       "веб-интерфейс Vault или на сервере scripts/secrets.sh set $key"
+            die "секрета $key нет в Vault ($KV_MOUNT/$KV_PREFIX/$path). На сервере: scripts/secrets.sh init $svc"
+        fi
 
-        # Значения подставляются в JAAS, JSON и SQL — допускаем только безопасные символы.
-        [[ "$value" =~ ^[A-Za-z0-9_-]+$ ]] \
+        # Генерируемые значения подставляются в JAAS, JSON и SQL — допускаем только безопасные символы.
+        # Выданные извне (manual: адрес почты, токен бота) идут только в переменные окружения
+        # контейнера; ' и перевод строки отсекает write_env_file.
+        [[ "$gen" == "manual" || "$value" =~ ^[A-Za-z0-9_-]+$ ]] \
             || die "$key содержит недопустимые символы (разрешены A-Z a-z 0-9 _ -)"
 
         mask "$value"
         export "$key=$value"
         SECRET_KEYS+=("$key")
         count=$((count + 1))
-    done < <(manifest "$SERVICE")
+    done < <(service_manifest "$SERVICE")
 
     log "secrets loaded: $count"
 }
@@ -202,13 +208,13 @@ deploy_redis() {
     compose up -d --wait
 }
 
-# Имена из DOMAIN и DOMAIN_ALIASES, которых нет в сертификате (нет сертификата — все).
+# Имена из DOMAIN, DOMAIN_ALIASES и VAULT_DOMAIN, которых нет в сертификате (нет сертификата — все).
 # Строка с именами у certbot 2.x — «Domains:», у новых версий — «Identifiers:».
 cert_missing_names() {
     local have name aliases="${DOMAIN_ALIASES:-}"
     have="$(docker run --rm -v "$PWD/certbot/conf:/etc/letsencrypt" certbot/certbot:latest \
         certificates --cert-name "$DOMAIN" 2> /dev/null | sed -n -E 's/^ *(Domains|Identifiers): //p' || true)"
-    for name in "$DOMAIN" ${aliases//,/ }; do
+    for name in "$DOMAIN" ${aliases//,/ } ${VAULT_DOMAIN:-}; do
         [[ " $have " == *" $name "* ]] || echo "$name"
     done
 }
@@ -231,6 +237,23 @@ deploy_web_server() {
     compose up -d --wait
     compose exec -T nginx nginx -t
     compose exec -T nginx nginx -s reload
+}
+
+# deploy_notify <контейнер> — сервисы уведомлений (mailing, telegram): образ собирается из папки.
+# healthy — есть соединение с брокером и очередь читается. Не подошёл пароль SMTP или токен бота —
+# контейнер остаётся unhealthy (очередь не читает), причина — в логе ниже.
+deploy_notify() {
+    compose build
+    compose up -d --wait --wait-timeout 180 \
+        || { docker logs --tail 30 "$1" 2>&1; die "$1 не стал healthy — причина в логе выше"; }
+}
+
+deploy_mailing() {
+    deploy_notify tf-mail
+}
+
+deploy_telegram() {
+    deploy_notify tf-tg
 }
 
 deploy_hashicorp() {
