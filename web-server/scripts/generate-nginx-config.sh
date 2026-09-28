@@ -22,6 +22,10 @@ fi
 # Validate environment
 # ==================================================
 
+# Модель: имя контейнера в think-fast-net одинаково на всех стендах, в stands/*.env можно не задавать.
+ML_HOST="${ML_HOST:-tf-model}"
+ML_PORT="${ML_PORT:-8000}"
+
 required_vars=(
     DOMAIN
     DOCKER_NETWORK
@@ -34,6 +38,12 @@ required_vars=(
 
     BFF_HOST
     BFF_PORT
+
+    FUNNEL_HOST
+    FUNNEL_PORT
+
+    ML_HOST
+    ML_PORT
 )
 
 for var in "${required_vars[@]}"; do
@@ -91,13 +101,32 @@ render() {
     docker run --rm -i "$@" nginx:1.29-alpine envsubst "$names" < "$template"
 }
 
+# access_rules <ИМЯ_НАСТРОЙКИ> — правила nginx из списка адресов и подсетей через запятую:
+# "allow a; allow b; deny all;". Пусто — пустая строка (доступ всем).
+access_rules() {
+    local name="$1" list="${!1:-}" net rules=""
+    for net in ${list//,/ }; do
+        if [[ ! "$net" =~ ^[0-9A-Fa-f:.]+(/[0-9]{1,3})?$ ]]; then
+            echo "ERROR: $name: '$net' — не адрес и не подсеть (stands/<стенд>.env)." >&2
+            exit 1
+        fi
+        rules+="allow $net; "
+    done
+    [ -z "$rules" ] || rules+="deny all;"
+    printf '%s' "$rules"
+}
+
+# FUNNEL_EVENTS_ALLOW: статический IP шины — только он может слать пакеты в /api/funnel/events.
+FUNNEL_EVENTS_ACCESS="$(access_rules FUNNEL_EVENTS_ALLOW)"
+
 # Пишем через временный файл: nginx.conf смонтирован в контейнер, частичный файл ему не нужен.
 render nginx/nginx.conf.template \
-    '${DOMAIN} ${SERVER_NAMES} ${HTTP_SERVER_NAMES} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT}' \
+    '${DOMAIN} ${SERVER_NAMES} ${HTTP_SERVER_NAMES} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT} ${FUNNEL_HOST} ${FUNNEL_PORT} ${FUNNEL_EVENTS_ACCESS} ${ML_HOST} ${ML_PORT}' \
     -e "DOMAIN=$DOMAIN" -e "SERVER_NAMES=$SERVER_NAMES" -e "HTTP_SERVER_NAMES=$HTTP_SERVER_NAMES" \
     -e "FRONTEND_HOST=$FRONTEND_HOST" -e "FRONTEND_PORT=$FRONTEND_PORT" \
     -e "AUTH_HOST=$AUTH_HOST" -e "AUTH_PORT=$AUTH_PORT" \
     -e "BFF_HOST=$BFF_HOST" -e "BFF_PORT=$BFF_PORT" \
+    -e "FUNNEL_HOST=$FUNNEL_HOST" -e "FUNNEL_PORT=$FUNNEL_PORT" -e "FUNNEL_EVENTS_ACCESS=$FUNNEL_EVENTS_ACCESS" \
     > nginx/nginx.conf.tmp
 
 # cat, а не mv: сохраняем inode файла, смонтированного в работающий контейнер.
@@ -116,16 +145,7 @@ if [ -n "${VAULT_DOMAIN:-}" ]; then
     echo "==> Generating tf.d/vault.conf (https://$VAULT_DOMAIN)..."
 
     # VAULT_ALLOW: адреса и подсети через запятую. Пусто — доступ всем, защита — токен Vault.
-    VAULT_ACCESS=""
-    allow="${VAULT_ALLOW:-}"
-    for net in ${allow//,/ }; do
-        if [[ ! "$net" =~ ^[0-9A-Fa-f:.]+(/[0-9]{1,3})?$ ]]; then
-            echo "ERROR: VAULT_ALLOW: '$net' — не адрес и не подсеть (stands/<стенд>.env)."
-            exit 1
-        fi
-        VAULT_ACCESS+="allow $net; "
-    done
-    [ -z "$VAULT_ACCESS" ] || VAULT_ACCESS+="deny all;"
+    VAULT_ACCESS="$(access_rules VAULT_ALLOW)"
 
     render nginx/vault.conf.template '${DOMAIN} ${VAULT_DOMAIN} ${VAULT_ACCESS}' \
         -e "DOMAIN=$DOMAIN" -e "VAULT_DOMAIN=$VAULT_DOMAIN" -e "VAULT_ACCESS=$VAULT_ACCESS" \

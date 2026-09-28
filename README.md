@@ -135,6 +135,9 @@ eval "$(../scripts/secrets.sh env <папка>)"
 [docs/vault-entrypoint.sh](docs/vault-entrypoint.sh) входит по AppRole сервиса (`http://vault:8200`
 в сети `think-fast-net`), выставляет переменные окружения и запускает приложение.
 ТЗ для репозиториев сервисов, по файлу на репозиторий — [docs/vault-tz/](docs/vault-tz/README.md).
+Встраивание воронки данных `tf-funnel` в стенд (nginx `/api/funnel/*`, том, настройки) —
+[docs/funnel-tz/tf-funnel.md](docs/funnel-tz/tf-funnel.md); отправка уведомлений из `tf-bff` —
+[docs/notify-tz/tf-bff.md](docs/notify-tz/tf-bff.md).
 
 - Какой сервис какие пути читает — [hashicorp/services.conf](hashicorp/services.conf).
   По нему `hashicorp/scripts/setup.sh apply` (с root-токеном) создаёт политику и AppRole `tf-svc-<сервис>`.
