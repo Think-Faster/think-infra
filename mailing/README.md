@@ -36,11 +36,29 @@ Telegram — отдельный сервис [telegram/](../telegram/README.md) 
 | `TF_MAIL_SMTP_PORT` | `app/tf-mail` | **руками**: `587` (STARTTLS); `465` — SSL |
 | `TF_MAIL_SMTP_USER` | `app/tf-mail` | **руками**: адрес ящика, от которого уходят письма |
 | `TF_MAIL_SMTP_PASSWORD` | `app/tf-mail` | **руками**: пароль приложения Google (16 букв; пробелы можно оставить) |
+| `MAIL_FROM` | `stands/<стенд>.env` (не секрет) | адрес отправителя; пусто — `TF_MAIL_SMTP_USER` |
 | `TF_RABBIT_EMAIL_PASSWORD` | `rabbit/email` | уже есть: учётка брокера `tf-notify-email` |
 | `TF_REDIS_PASSWORD` | `redis` | уже есть |
 
 Пароль приложения Gmail: аккаунт Google → Безопасность → двухэтапная аутентификация включена →
 «Пароли приложений» → создать. Обычный пароль от почты SMTP Gmail не примет.
+
+### Prod: почтовые порты закрыты — Resend на 2587
+
+Хостинг prod (45.87.41.186) молча отбрасывает исходящие 25, 465 и 587 — и с хоста, и из docker; фаервол
+самой машины их не режет (проверено 28.09). До Gmail письма не дойдут. Открыт порт Resend 2587 (STARTTLS
+выбирается сам), код менять не нужно — только значения в `app/tf-mail`:
+
+| Ключ | Значение |
+|---|---|
+| `TF_MAIL_SMTP_HOST` | `smtp.resend.com` |
+| `TF_MAIL_SMTP_PORT` | `2587` |
+| `TF_MAIL_SMTP_USER` | `resend` |
+| `TF_MAIL_SMTP_PASSWORD` | ключ API Resend (`re_…`, права Sending access) |
+
+Адрес отправителя — `MAIL_FROM=noreply@thinkfaster.ru` в `stands/prod.env`. Перед этим в Resend:
+Domains → Add domain `thinkfaster.ru` → записи DKIM (TXT `resend._domainkey`) и SPF (MX и TXT на `send`)
+добавить в DNS reg.ru → Verify. С неподтверждённого домена Resend отправителя отвергает.
 
 ### Как завести SMTP-секреты
 
