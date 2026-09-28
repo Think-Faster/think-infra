@@ -127,6 +127,7 @@ render nginx/nginx.conf.template \
     -e "AUTH_HOST=$AUTH_HOST" -e "AUTH_PORT=$AUTH_PORT" \
     -e "BFF_HOST=$BFF_HOST" -e "BFF_PORT=$BFF_PORT" \
     -e "FUNNEL_HOST=$FUNNEL_HOST" -e "FUNNEL_PORT=$FUNNEL_PORT" -e "FUNNEL_EVENTS_ACCESS=$FUNNEL_EVENTS_ACCESS" \
+    -e "ML_HOST=$ML_HOST" -e "ML_PORT=$ML_PORT" \
     > nginx/nginx.conf.tmp
 
 # cat, а не mv: сохраняем inode файла, смонтированного в работающий контейнер.
