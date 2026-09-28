@@ -1,13 +1,18 @@
-# Выкатка prod с раннера prod: инфраструктура, затем tf-auth и tf-bff — без SSH-ключа в GitHub.
+# Выкатка prod с раннера prod: инфраструктура, tf-auth, tf-bff и сервисы Think-Faster (tf-funnel,
+# tf-model, tf-audit) — без SSH-ключа в GitHub.
 #
 # Код tf-auth и tf-bff лежит на сервере в /srv/thinkfaster/services/<репо> (git archive ветки prod
 # репозитория сервиса; тот же каталог использует deploy-prod.yml в think-auth / think-bff).
+# Образы tf-funnel:prod, tf-model:prod, tf-audit:prod и tf-emulator:prod собираются на сервере
+# скриптом /srv/thinkfaster/services/think-faster/build.sh (код и пакет модели из Think-Faster).
+# tf-audit в шаги по умолчанию не входит: нужна схема audit (schemas.conf + пароли в secrets.conf).
 #
 # Доступ к Vault — секреты Environment prod этого репозитория:
 #   VAULT_TOKEN   токен администратора (root) — нужен для setup.sh apply и для выдачи пар сервисам;
 #                 без него сработает только то, для чего пары уже заданы ниже;
 #   TF_AUTH_VAULT_ROLE_ID / TF_AUTH_VAULT_SECRET_ID  пара роли tf-svc-tf-auth (необязательно);
-#   TF_BFF_VAULT_ROLE_ID  / TF_BFF_VAULT_SECRET_ID   пара роли tf-svc-tf-bff  (необязательно).
+#   TF_BFF_VAULT_ROLE_ID  / TF_BFF_VAULT_SECRET_ID   пара роли tf-svc-tf-bff  (необязательно);
+#   так же TF_FUNNEL_*, TF_MODEL_*, TF_AUDIT_* для tf-svc-tf-funnel / tf-model / tf-audit.
 # Если пары сервиса нет, она выдаётся на лету из VAULT_TOKEN (как setup.sh service-credentials),
 # маскируется и уходит только в окружение контейнера — в журнал и на диск не пишется.
 #
@@ -23,7 +28,7 @@ on:
     inputs:
       steps:
         description: Что выкатывать, по порядку
-        default: apply postgree redis rabbitmq kafka auth bff mailing telegram
+        default: apply secrets postgree redis rabbitmq kafka auth bff funnel model mailing telegram
 
 permissions:
   contents: read
@@ -40,13 +45,19 @@ jobs:
     timeout-minutes: 90
     env:
       TF_STAND: prod
-      STEPS: ${{ github.event.inputs.steps || 'apply postgree redis rabbitmq kafka auth bff mailing telegram' }}
+      STEPS: ${{ github.event.inputs.steps || 'apply secrets postgree redis rabbitmq kafka auth bff funnel model mailing telegram' }}
       SERVICES_DIR: /srv/thinkfaster/services
       VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
       TF_AUTH_VAULT_ROLE_ID: ${{ secrets.TF_AUTH_VAULT_ROLE_ID }}
       TF_AUTH_VAULT_SECRET_ID: ${{ secrets.TF_AUTH_VAULT_SECRET_ID }}
       TF_BFF_VAULT_ROLE_ID: ${{ secrets.TF_BFF_VAULT_ROLE_ID }}
       TF_BFF_VAULT_SECRET_ID: ${{ secrets.TF_BFF_VAULT_SECRET_ID }}
+      TF_FUNNEL_VAULT_ROLE_ID: ${{ secrets.TF_FUNNEL_VAULT_ROLE_ID }}
+      TF_FUNNEL_VAULT_SECRET_ID: ${{ secrets.TF_FUNNEL_VAULT_SECRET_ID }}
+      TF_MODEL_VAULT_ROLE_ID: ${{ secrets.TF_MODEL_VAULT_ROLE_ID }}
+      TF_MODEL_VAULT_SECRET_ID: ${{ secrets.TF_MODEL_VAULT_SECRET_ID }}
+      TF_AUDIT_VAULT_ROLE_ID: ${{ secrets.TF_AUDIT_VAULT_ROLE_ID }}
+      TF_AUDIT_VAULT_SECRET_ID: ${{ secrets.TF_AUDIT_VAULT_SECRET_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -78,6 +89,32 @@ jobs:
           step_apply() {
             [ -n "${VAULT_TOKEN:-}" ] || { log "VAULT_TOKEN не задан — apply пропущен"; return 0; }
             bash hashicorp/scripts/setup.sh apply
+          }
+
+          # Недостающие секреты из secrets.conf (пароли kafka/rabbit новых сервисов и т.п.) — генерация.
+          step_secrets() {
+            [ -n "${VAULT_TOKEN:-}" ] || { log "VAULT_TOKEN не задан — secrets init пропущен"; return 0; }
+            bash scripts/secrets.sh init < /dev/null
+          }
+
+          # Сервис Think-Faster из готового образа <имя>:prod — как в deploy-*-dev.yml Think-Faster.
+          step_container() {
+            local name="$1" prefix="$2" mem="$3"; shift 3
+            ( set -e
+              docker image inspect "$name:prod" > /dev/null \
+                || { log "нет образа $name:prod — /srv/thinkfaster/services/think-faster/build.sh"; exit 1; }
+              pair "$prefix" "tf-svc-$name"
+              docker rm -f "$name" > /dev/null 2>&1 || true
+              docker run -d --name "$name" --network think-fast-net --restart unless-stopped \
+                --memory "$mem" \
+                -e TF_ENV=prod -e VAULT_ADDR=http://vault:8200 -e TF_VAULT_WAIT=900 \
+                -e TF_REDIS_URL=redis://tf-redis:6379/0 \
+                -e TF_AUTH_JWKS=http://tf-auth:8080/.well-known/jwks \
+                -e VAULT_ROLE_ID -e VAULT_SECRET_ID \
+                "$@" "$name:prod" > /dev/null
+              sleep 30
+              docker ps -a --filter "name=^$name\$" --format '{{.Names}} {{.Status}}'
+              docker logs --tail 40 "$name" )
           }
 
           step_infra() {
@@ -130,6 +167,16 @@ jobs:
               apply) step_apply ;;
               auth)  step_auth ;;
               bff)   step_bff ;;
+              secrets) step_secrets ;;
+              funnel) step_container tf-funnel TF_FUNNEL 512m -v tf-funnel-data:/data \
+                        -e TF_FUNNEL_PULL=http://tf-emulator:8000 -e TF_FUNNEL_SILENT_MIN=60 \
+                        -e TF_FUNNEL_ARCHIVE=/data/archive -e TF_FUNNEL_ARCHIVE_DAYS=0 \
+                        -e TF_BFF_URL=http://tf-bff:8080 -e TF_AUDIT_SPOOL=/tmp/tf-audit.spool ;;
+              # памяти на сервере ~3,5 ГБ свободно: DuckDB модели — 1 ГБ вместо 2 ГБ по умолчанию
+              model)  step_container tf-model TF_MODEL 2500m -v tf-ml-work:/work \
+                        -e TF_MODEL_CLOCK=live -e TF_MEMORY=1GB ;;
+              audit)  step_container tf-audit TF_AUDIT 256m \
+                        -e "TF_AUDIT_DB=host=tf-postgres dbname=tf user=audit_user" ;;
               *)     step_infra "$s" ;;
             esac
             rc=$?
