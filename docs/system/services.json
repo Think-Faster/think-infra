@@ -1,0 +1,9 @@
+[
+  {"file": "tf-auth.md",     "repo": "think-auth",   "ref": "TF-Auth-Docs@6947f44"},
+  {"file": "tf-bff.md",      "repo": "think-bff",    "ref": "dev@3dc8875"},
+  {"file": "tf-front.md",    "repo": "think-front",  "ref": "TF-Front-Docs@46e013e"},
+  {"file": "tf-funnel.md",   "repo": "Think-Faster", "ref": "main@7cfe8f2"},
+  {"file": "tf-model.md",    "repo": "Think-Faster", "ref": "main@7cfe8f2"},
+  {"file": "tf-audit.md",    "repo": "Think-Faster", "ref": "main@7cfe8f2"},
+  {"file": "tf-emulator.md", "repo": "Think-Faster", "ref": "main@7cfe8f2"}
+]
