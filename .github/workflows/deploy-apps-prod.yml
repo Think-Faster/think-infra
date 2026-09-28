@@ -53,7 +53,7 @@ jobs:
       - name: Deploy
         shell: bash
         run: |
-          set -uo pipefail
+          set +e -uo pipefail   # шаги независимы: упавший не прерывает остальные
           LOG_TAG="PROD"
           source scripts/lib/vault.sh
           vault_require_unsealed
