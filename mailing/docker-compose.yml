@@ -26,8 +26,10 @@ services:
       TF_REDIS_URL: redis://tf-redis:6379/0
       TF_REDIS_PASSWORD: ${TF_REDIS_PASSWORD:?TF_REDIS_PASSWORD is not set}
 
-      # Имя отправителя в письме. Адрес — TF_MAIL_SMTP_USER (Gmail подставляет адрес учётки сам).
+      # Отправитель: имя и адрес. Адрес — MAIL_FROM из stands/<стенд>.env; пусто — TF_MAIL_SMTP_USER
+      # (Gmail подставляет адрес учётки сам). У Resend логин — не адрес, там MAIL_FROM обязателен.
       MAIL_FROM_NAME: Think Faster — оповещения
+      MAIL_FROM: ${MAIL_FROM:-}
 
     # Портов нет: сервис только читает очередь.
     networks:
