@@ -25,24 +25,26 @@ def render(subject: str, text: str) -> str:
     return f'<b>{html.escape(subject)}</b>\n\n{html.escape(text)}'
 
 
-def call(settings: Settings, method: str, body: dict) -> dict:
-    """Запрос к Bot API. Ответ с ok=false возвращается как есть; 429 с короткой паузой — повтор."""
-    data = _post(settings, method, body)
+def call(settings: Settings, method: str, body: dict, timeout: float | None = None) -> dict:
+    """Запрос к Bot API. Ответ с ok=false возвращается как есть; 429 с короткой паузой — повтор.
+
+    `timeout` — дольше обычного для long polling getUpdates (links.poll)."""
+    data = _post(settings, method, body, timeout)
     retry = data.get('parameters', {}).get('retry_after')
     if data.get('error_code') == 429 and retry is not None and retry <= 5:
         time.sleep(retry)
-        data = _post(settings, method, body)
+        data = _post(settings, method, body, timeout)
     return data
 
 
-def _post(settings: Settings, method: str, body: dict) -> dict:
+def _post(settings: Settings, method: str, body: dict, timeout: float | None = None) -> dict:
     if not settings.bot_token:
         raise TelegramError(503, 'не задан TF_TG_BOT_TOKEN')
     request = urllib.request.Request(f'{settings.api_url}/bot{settings.bot_token}/{method}',
                                      data=json.dumps(body).encode(), method='POST',
                                      headers={'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(request, timeout=settings.timeout) as reply:
+        with urllib.request.urlopen(request, timeout=timeout or settings.timeout) as reply:
             status, raw = reply.status, reply.read()
     except urllib.error.HTTPError as e:                  # 400, 403, 429 — ответ Bot API с описанием
         status, raw = e.code, e.read()
@@ -94,22 +96,6 @@ def send(settings: Settings, chats: list[int | str], subject: str, text: str,
             if later is not None and (reply.get('error_code') or 0) in (429, 500, 502, 503, 504):
                 later.append(str(chat))
     return sent, failed
-
-
-def recent_chats(settings: Settings) -> list[dict]:
-    """Чаты, которые писали боту за последние сутки: так узнают chat_id получателей."""
-    reply = call(settings, 'getUpdates', {'allowed_updates': ['message', 'channel_post', 'my_chat_member']})
-    if not reply.get('ok'):
-        raise TelegramError(502, explain(reply))
-    chats: dict[int, dict] = {}
-    for update in reply['result']:
-        for kind in ('message', 'channel_post', 'my_chat_member'):
-            chat = update.get(kind, {}).get('chat')
-            if chat:
-                name = chat.get('title') or ' '.join(filter(None, (chat.get('first_name'), chat.get('last_name'))))
-                chats[chat['id']] = {'chat_id': chat['id'], 'type': chat['type'],
-                                     'name': name, 'username': chat.get('username')}
-    return list(chats.values())
 
 
 def explain(reply: dict) -> str:

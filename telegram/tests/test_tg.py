@@ -15,6 +15,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'app'))
 
 import broker  # noqa: E402
+import links as tg_links  # noqa: E402
 import notice  # noqa: E402
 import settings as config  # noqa: E402
 import telegram_bot  # noqa: E402
@@ -121,3 +122,64 @@ def test_bad_token_is_auth(monkeypatch):
     with pytest.raises(telegram_bot.TelegramError) as e:
         telegram_bot.check(config.load(ENV))
     assert e.value.auth
+
+
+def test_usernames_resolve_through_links():
+    links = tg_links.Links()
+    links.link('ivan_petrov', 555)
+    calls = []
+
+    def tg(s, chats, subject, text, later=None):
+        calls.append(list(chats))
+        return list(chats), {}
+
+    s = config.load(ENV)
+    c = broker.Consumer('telegram', notice.parse, notice.sender(s, tg, links), broker.Sent(), s.retries)
+    body = message(to={'usernames': ['@Ivan_Petrov', 'not_linked']})
+    assert c.decide(body) == broker.ACK          # ушло подключившему, второй не нажал «Старт» — не повтор
+    assert calls == [['555']]
+
+
+def test_nobody_linked_is_permanent():
+    c = broker.Consumer('telegram', notice.parse, notice.sender(config.load(ENV), None, tg_links.Links()),
+                        broker.Sent(), 5)
+    assert c.decide(message(to={'usernames': ['nobody_here']})) == broker.REJECT
+
+
+def test_bad_username_is_permanent():
+    assert consumer(None).decide(message(to={'usernames': ['a b']})) == broker.REJECT
+
+
+def test_start_and_stop_link_username():
+    links = tg_links.Links()
+    start = {'update_id': 1, 'message': {'chat': {'id': 77, 'type': 'private', 'first_name': 'Иван'},
+                                         'from': {'username': 'Ivan_Petrov'}, 'text': '/start'}}
+    chat_id, text = tg_links.handle(start, links)
+    assert chat_id == 77 and '@ivan_petrov' in text and links.get('ivan_petrov') == 77
+    assert links.chats()[0]['chat_id'] == 77
+
+    stop = {'update_id': 2, 'message': {**start['message'], 'text': '/stop'}}
+    assert tg_links.handle(stop, links)[0] == 77 and links.get('ivan_petrov') is None
+
+
+def test_start_without_username_explains():
+    links = tg_links.Links()
+    update = {'update_id': 1, 'message': {'chat': {'id': 5, 'type': 'private'}, 'from': {}, 'text': '/start'}}
+    assert 'имя пользователя' in tg_links.handle(update, links)[1]
+    assert links.get('anyone') is None
+
+
+def test_blocked_bot_unlinks():
+    links = tg_links.Links()
+    links.link('ivan_petrov', 77)
+    update = {'update_id': 3, 'my_chat_member': {'chat': {'id': 77, 'type': 'private'},
+                                                 'from': {'username': 'ivan_petrov'},
+                                                 'new_chat_member': {'status': 'kicked'}}}
+    assert tg_links.handle(update, links) is None and links.get('ivan_petrov') is None
+
+
+def test_group_message_is_only_remembered():
+    links = tg_links.Links()
+    update = {'update_id': 4, 'message': {'chat': {'id': -100, 'type': 'group', 'title': 'Смена'}, 'text': 'hi'}}
+    assert tg_links.handle(update, links) is None
+    assert links.chats() == [{'chat_id': -100, 'type': 'group', 'name': 'Смена', 'username': None}]

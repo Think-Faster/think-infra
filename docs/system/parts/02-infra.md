@@ -239,7 +239,7 @@ Redis — единственный буфер аудита: если он пот
 `app/broker.py` лежит копией в обеих папках (менять оба файла).
 
 - **Контракт** (издатель — tf-bff): exchange `tf.notifications`, ключ `email` или `telegram`, JSON
-  `{schema: 1, notice_id (uuid), subject (≤255), text (≤20000), to: {emails | chat_ids}, ticket_id?, kind?, request_id?}`.
+  `{schema: 1, notice_id (uuid), subject (≤255), text (≤20000), to: {emails | usernames, chat_ids}, ticket_id?, kind?, request_id?}`.
   Полное ТЗ для издателя — `docs/notify-tz/tf-bff.md`. Реализация tf-bff сверена с ним: поля совпадают,
   BFF шлёт одно письмо на адресата и один Telegram на всех.
 - **Ответ брокеру:**
@@ -258,7 +258,7 @@ Redis — единственный буфер аудита: если он пот
 - **Почта на prod:** хостинг молча режет исходящие 25/465/587 (с хоста и из docker). Используется Resend:
   `smtp.resend.com:2587`, логин `resend`, пароль — API-ключ, отправитель `MAIL_FROM=noreply@thinkfaster.ru`
   (домен подтверждён в Resend через DKIM и SPF в DNS reg.ru). На dev — Gmail `587` с паролем приложения.
-- **Telegram:** `docker exec tf-tg python chats.py` показывает, кто писал боту за сутки (оттуда берут `chat_id`).
+- **Telegram:** человек подключается сам — username в профиле и «Старт» у бота (tf-tg запоминает `chat_id` в Redis `tg:user:*`); `docker exec tf-tg python chats.py` — кто писал боту и кто подключён, `chat_id` групп.
 - Подробно — `mailing/README.md`, `telegram/README.md`.
 
 ## 2.11. Выкатка

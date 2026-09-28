@@ -84,7 +84,7 @@
 | Очистить DLQ RabbitMQ | после разбора: `rabbitmqctl purge_queue -p tf tf.dlq` |
 | Очистить архив воронки вручную | `docker run --rm -v tf-funnel-data:/data alpine sh -c 'du -sh /data/archive/*'`, затем удалить каталоги дней |
 | Скорость эмулятора (dev) | повтор `deploy-emulator-dev.yml` с `speed` или `POST /api/speed` изнутри сети (tf-emulator §8) |
-| `chat_id` для Telegram | `docker exec tf-tg python chats.py` |
+| кто подключил Telegram, `chat_id` групп | `docker exec tf-tg python chats.py` |
 | Бэкап Vault вручную | `VAULT_TOKEN_FILE=$TF_INFRA_DIR/hashicorp/.backup-token sh $TF_INFRA_DIR/hashicorp/scripts/backup.sh` |
 
 ## 5.5. Ресурсы

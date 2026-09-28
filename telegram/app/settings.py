@@ -29,6 +29,7 @@ class Settings:
     redis_url: str = 'redis://tf-redis:6379/0'      # off — без Redis
     redis_password: str = field(default='', repr=False)
     retries: int = 5                    # как delivery-limit политики tf-notify в rabbitmq/definitions.json
+    poll: bool = True                   # читать /start и /stop (links.py); off — только отправка
 
 
 def load(env: Mapping[str, str] = os.environ) -> Settings:
@@ -45,4 +46,5 @@ def load(env: Mapping[str, str] = os.environ) -> Settings:
         redis_url=env.get('TF_REDIS_URL') or Settings.redis_url,
         redis_password=env.get('TF_REDIS_PASSWORD', ''),
         retries=int(env.get('NOTIFY_RETRIES') or 5),
+        poll=(env.get('TG_POLL') or 'on').lower() != 'off',
     )
