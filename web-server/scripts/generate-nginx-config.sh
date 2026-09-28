@@ -22,6 +22,10 @@ fi
 # Validate environment
 # ==================================================
 
+# Модель: имя контейнера в think-fast-net одинаково на всех стендах, в stands/*.env можно не задавать.
+ML_HOST="${ML_HOST:-tf-model}"
+ML_PORT="${ML_PORT:-8000}"
+
 required_vars=(
     DOMAIN
     DOCKER_NETWORK
@@ -37,6 +41,9 @@ required_vars=(
 
     FUNNEL_HOST
     FUNNEL_PORT
+
+    ML_HOST
+    ML_PORT
 )
 
 for var in "${required_vars[@]}"; do
@@ -114,7 +121,7 @@ FUNNEL_EVENTS_ACCESS="$(access_rules FUNNEL_EVENTS_ALLOW)"
 
 # Пишем через временный файл: nginx.conf смонтирован в контейнер, частичный файл ему не нужен.
 render nginx/nginx.conf.template \
-    '${DOMAIN} ${SERVER_NAMES} ${HTTP_SERVER_NAMES} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT} ${FUNNEL_HOST} ${FUNNEL_PORT} ${FUNNEL_EVENTS_ACCESS}' \
+    '${DOMAIN} ${SERVER_NAMES} ${HTTP_SERVER_NAMES} ${FRONTEND_HOST} ${FRONTEND_PORT} ${AUTH_HOST} ${AUTH_PORT} ${BFF_HOST} ${BFF_PORT} ${FUNNEL_HOST} ${FUNNEL_PORT} ${FUNNEL_EVENTS_ACCESS} ${ML_HOST} ${ML_PORT}' \
     -e "DOMAIN=$DOMAIN" -e "SERVER_NAMES=$SERVER_NAMES" -e "HTTP_SERVER_NAMES=$HTTP_SERVER_NAMES" \
     -e "FRONTEND_HOST=$FRONTEND_HOST" -e "FRONTEND_PORT=$FRONTEND_PORT" \
     -e "AUTH_HOST=$AUTH_HOST" -e "AUTH_PORT=$AUTH_PORT" \

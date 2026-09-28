@@ -106,6 +106,9 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
 
         # --------------------------------------------------
@@ -133,6 +136,9 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
 
         # --------------------------------------------------
@@ -174,6 +180,9 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
 
         # Живые показания для фронта: WebSocket. Сервер шлёт ping раз в 30 с,
@@ -203,6 +212,9 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
 
         # Окно «Логи»: тяжёлый запрос к архиву.
@@ -227,6 +239,9 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
 
         # Остальное: /status, /health.
@@ -245,6 +260,41 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
+        }
+
+        # --------------------------------------------------
+        # Модель (tf-model, think-faster ML/service)
+        #
+        # /api/ml/*
+        #       ↓
+        # ${ML_HOST}:${ML_PORT}/api/ml/*
+        #
+        # Префикс не срезается: модель отвечает и на /api/ml/..., и без префикса. Ручки под JWT.
+        # --------------------------------------------------
+
+        location /api/ml/ {
+
+            set $ml_upstream http://${ML_HOST}:${ML_PORT};
+
+            proxy_pass $ml_upstream;
+
+            proxy_http_version 1.1;
+
+            proxy_read_timeout 60s;
+
+            proxy_set_header Host $host;
+
+            proxy_set_header X-Real-IP $remote_addr;
+
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
 
         # --------------------------------------------------
@@ -270,6 +320,9 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
     }
 
