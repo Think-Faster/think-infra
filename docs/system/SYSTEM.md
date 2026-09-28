@@ -1,11 +1,11 @@
 # Think Faster — системная документация
 
 Версия документа: **2026-09-29**. Собран из разделов сервисов и частей инфраструктуры скриптом
-`docs/system/build.py` (think-infra, ветка `TF-Infra-Docs@8a18c26`).
+`docs/system/build.py` (think-infra, ветка `TF-Infra-TelegramLinks@1d7ee3f`).
 
 | Часть | Источник | Версия |
 |---|---|---|
-| I–II, IV–IX, приложения | think-infra | `TF-Infra-Docs@8a18c26` |
+| I–II, IV–IX, приложения | think-infra | `TF-Infra-TelegramLinks@1d7ee3f` |
 | Часть III — tf-auth | think-auth | `TF-Auth-Docs@6947f44` |
 | Часть III — tf-bff | think-bff | `dev@3dc8875` |
 | Часть III — tf-front | think-front | `TF-Front-Docs@46e013e` |
@@ -570,7 +570,7 @@ Redis — единственный буфер аудита: если он пот
 `app/broker.py` лежит копией в обеих папках (менять оба файла).
 
 - **Контракт** (издатель — tf-bff): exchange `tf.notifications`, ключ `email` или `telegram`, JSON
-  `{schema: 1, notice_id (uuid), subject (≤255), text (≤20000), to: {emails | chat_ids}, ticket_id?, kind?, request_id?}`.
+  `{schema: 1, notice_id (uuid), subject (≤255), text (≤20000), to: {emails | usernames, chat_ids}, ticket_id?, kind?, request_id?}`.
   Полное ТЗ для издателя — `docs/notify-tz/tf-bff.md`. Реализация tf-bff сверена с ним: поля совпадают,
   BFF шлёт одно письмо на адресата и один Telegram на всех.
 - **Ответ брокеру:**
@@ -589,7 +589,7 @@ Redis — единственный буфер аудита: если он пот
 - **Почта на prod:** хостинг молча режет исходящие 25/465/587 (с хоста и из docker). Используется Resend:
   `smtp.resend.com:2587`, логин `resend`, пароль — API-ключ, отправитель `MAIL_FROM=noreply@thinkfaster.ru`
   (домен подтверждён в Resend через DKIM и SPF в DNS reg.ru). На dev — Gmail `587` с паролем приложения.
-- **Telegram:** `docker exec tf-tg python chats.py` показывает, кто писал боту за сутки (оттуда берут `chat_id`).
+- **Telegram:** человек подключается сам — username в профиле и «Старт» у бота (tf-tg запоминает `chat_id` в Redis `tg:user:*`); `docker exec tf-tg python chats.py` — кто писал боту и кто подключён, `chat_id` групп.
 - Подробно — `mailing/README.md`, `telegram/README.md`.
 
 ## 2.11. Выкатка
@@ -3870,7 +3870,7 @@ read -rs -p "ROOT: " VAULT_TOKEN; echo; export VAULT_TOKEN
 | Очистить DLQ RabbitMQ | после разбора: `rabbitmqctl purge_queue -p tf tf.dlq` |
 | Очистить архив воронки вручную | `docker run --rm -v tf-funnel-data:/data alpine sh -c 'du -sh /data/archive/*'`, затем удалить каталоги дней |
 | Скорость эмулятора (dev) | повтор `deploy-emulator-dev.yml` с `speed` или `POST /api/speed` изнутри сети (tf-emulator §8) |
-| `chat_id` для Telegram | `docker exec tf-tg python chats.py` |
+| кто подключил Telegram, `chat_id` групп | `docker exec tf-tg python chats.py` |
 | Бэкап Vault вручную | `VAULT_TOKEN_FILE=$TF_INFRA_DIR/hashicorp/.backup-token sh $TF_INFRA_DIR/hashicorp/scripts/backup.sh` |
 
 ## 5.5. Ресурсы

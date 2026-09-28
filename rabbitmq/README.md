@@ -144,7 +144,7 @@ docker compose up tf-rabbit-init
   "kind": "fact",
   "subject": "Загазованность: объект 5122",
   "text": "Канал 196771 «Газовая охрана». Заявка 1042.",
-  "to": { "emails": ["dispatcher@example.com"], "chat_ids": [123456789, -1001234567890] },
+  "to": { "emails": ["dispatcher@example.com"], "usernames": ["ivan_petrov"], "chat_ids": [-1001234567890] },
   "request_id": "e81b07c4f2a9"
 }
 ```
@@ -155,7 +155,8 @@ docker compose up tf-rabbit-init
 | `subject` | да | тема письма / жирная строка в Telegram, до 255 символов; переводы строк заменяются пробелом |
 | `text` | да | текст, до 20 000 символов; для Telegram тема + текст — не длиннее 4096 |
 | `to.emails` | для `email` | адреса; отправляются пачками по 50 |
-| `to.chat_ids` | для `telegram` | `chat_id` (число) или `@канал` |
+| `to.usernames` | для `telegram` (или `chat_ids`) | имя пользователя Telegram; `chat_id` tf-tg берёт из «Старта» у бота |
+| `to.chat_ids` | для `telegram` (или `usernames`) | `chat_id` группы (число) или `@канал` |
 | `ticket_id`, `kind`, `request_id` | нет | попадают в лог потребителя для поиска (`notify.sent` / `notify.failed`) |
 | `schema` | нет | версия формата, сейчас `1` |
 
