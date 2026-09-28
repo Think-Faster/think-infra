@@ -1,10 +1,11 @@
-# Выкатка prod с раннера prod: инфраструктура, tf-auth, tf-bff и сервисы Think-Faster (tf-funnel,
-# tf-model, tf-audit) — без SSH-ключа в GitHub.
+# Выкатка prod с раннера prod: инфраструктура, tf-auth, tf-bff и tf-audit — без SSH-ключа в GitHub.
+# tf-funnel и tf-model на prod выкатывает сам Think-Faster (deploy-funnel-prod.yml, deploy-model-prod.yml,
+# свои пары FUNNEL_/MODEL_VAULT_*): второй путь с другими параметрами здесь не держим.
 #
 # Код tf-auth и tf-bff лежит на сервере в /srv/thinkfaster/services/<репо> (git archive ветки prod
 # репозитория сервиса; тот же каталог использует deploy-prod.yml в think-auth / think-bff).
-# Образы tf-funnel:prod, tf-model:prod, tf-audit:prod и tf-emulator:prod собираются на сервере
-# скриптом /srv/thinkfaster/services/think-faster/build.sh (код и пакет модели из Think-Faster).
+# Образ tf-audit:prod собирается на сервере
+# скриптом /srv/thinkfaster/services/think-faster/build.sh (код из Think-Faster).
 # tf-audit в шаги по умолчанию не входит: нужна схема audit (schemas.conf + пароли в secrets.conf).
 #
 # Доступ к Vault — секреты Environment prod этого репозитория:
@@ -12,7 +13,7 @@
 #                 без него сработает только то, для чего пары уже заданы ниже;
 #   TF_AUTH_VAULT_ROLE_ID / TF_AUTH_VAULT_SECRET_ID  пара роли tf-svc-tf-auth (необязательно);
 #   TF_BFF_VAULT_ROLE_ID  / TF_BFF_VAULT_SECRET_ID   пара роли tf-svc-tf-bff  (необязательно);
-#   так же TF_FUNNEL_*, TF_MODEL_*, TF_AUDIT_* для tf-svc-tf-funnel / tf-model / tf-audit.
+#   так же TF_AUDIT_* для tf-svc-tf-audit.
 # Если пары сервиса нет, она выдаётся на лету из VAULT_TOKEN (как setup.sh service-credentials),
 # маскируется и уходит только в окружение контейнера — в журнал и на диск не пишется.
 #
@@ -28,7 +29,7 @@ on:
     inputs:
       steps:
         description: Что выкатывать, по порядку
-        default: apply secrets postgree redis rabbitmq kafka auth bff funnel model mailing telegram
+        default: apply secrets postgree redis rabbitmq kafka auth bff mailing telegram
 
 permissions:
   contents: read
@@ -45,17 +46,13 @@ jobs:
     timeout-minutes: 90
     env:
       TF_STAND: prod
-      STEPS: ${{ github.event.inputs.steps || 'apply secrets postgree redis rabbitmq kafka auth bff funnel model mailing telegram' }}
+      STEPS: ${{ github.event.inputs.steps || 'apply secrets postgree redis rabbitmq kafka auth bff mailing telegram' }}
       SERVICES_DIR: /srv/thinkfaster/services
       VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
       TF_AUTH_VAULT_ROLE_ID: ${{ secrets.TF_AUTH_VAULT_ROLE_ID }}
       TF_AUTH_VAULT_SECRET_ID: ${{ secrets.TF_AUTH_VAULT_SECRET_ID }}
       TF_BFF_VAULT_ROLE_ID: ${{ secrets.TF_BFF_VAULT_ROLE_ID }}
       TF_BFF_VAULT_SECRET_ID: ${{ secrets.TF_BFF_VAULT_SECRET_ID }}
-      TF_FUNNEL_VAULT_ROLE_ID: ${{ secrets.TF_FUNNEL_VAULT_ROLE_ID }}
-      TF_FUNNEL_VAULT_SECRET_ID: ${{ secrets.TF_FUNNEL_VAULT_SECRET_ID }}
-      TF_MODEL_VAULT_ROLE_ID: ${{ secrets.TF_MODEL_VAULT_ROLE_ID }}
-      TF_MODEL_VAULT_SECRET_ID: ${{ secrets.TF_MODEL_VAULT_SECRET_ID }}
       TF_AUDIT_VAULT_ROLE_ID: ${{ secrets.TF_AUDIT_VAULT_ROLE_ID }}
       TF_AUDIT_VAULT_SECRET_ID: ${{ secrets.TF_AUDIT_VAULT_SECRET_ID }}
     steps:
@@ -168,13 +165,6 @@ jobs:
               auth)  step_auth ;;
               bff)   step_bff ;;
               secrets) step_secrets ;;
-              funnel) step_container tf-funnel TF_FUNNEL 512m -v tf-funnel-data:/data \
-                        -e TF_FUNNEL_PULL=http://tf-emulator:8000 -e TF_FUNNEL_SILENT_MIN=60 \
-                        -e TF_FUNNEL_ARCHIVE=/data/archive -e TF_FUNNEL_ARCHIVE_DAYS=0 \
-                        -e TF_BFF_URL=http://tf-bff:8080 -e TF_AUDIT_SPOOL=/tmp/tf-audit.spool ;;
-              # памяти на сервере ~3,5 ГБ свободно: DuckDB модели — 1 ГБ вместо 2 ГБ по умолчанию
-              model)  step_container tf-model TF_MODEL 2500m -v tf-ml-work:/work \
-                        -e TF_MODEL_CLOCK=live -e TF_MEMORY=1GB ;;
               audit)  step_container tf-audit TF_AUDIT 256m \
                         -e "TF_AUDIT_DB=host=tf-postgres dbname=tf user=audit_user" ;;
               *)     step_infra "$s" ;;
