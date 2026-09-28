@@ -57,8 +57,10 @@ Telegram — отдельный сервис [telegram/](../telegram/README.md) 
 | `TF_MAIL_SMTP_PASSWORD` | ключ API Resend (`re_…`, права Sending access) |
 
 Адрес отправителя — `MAIL_FROM=noreply@thinkfaster.ru` в `stands/prod.env`. Перед этим в Resend:
-Domains → Add domain `thinkfaster.ru` → записи DKIM (TXT `resend._domainkey`) и SPF (MX и TXT на `send`)
-добавить в DNS reg.ru → Verify. С неподтверждённого домена Resend отправителя отвергает.
+Domains → Add domain `thinkfaster.ru` → в DNS reg.ru добавить то, что Resend покажет (значения копировать
+из Resend целиком): TXT `resend._domainkey` (DKIM), CNAME `rsend` и CNAME `send` (SPF, на `….mta.net`),
+по желанию TXT `_dmarc` = `v=DMARC1; p=none;` → Verify. С неподтверждённого домена Resend отправителя
+отвергает.
 
 ### Как завести SMTP-секреты
 
