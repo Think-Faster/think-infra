@@ -34,7 +34,7 @@ blockquote { margin: 8px 0; padding: 4px 12px; border-left: 4px solid var(--line
 .toc ul, .toc ol { margin: 0; }
 </style><meta name="mermaid-status" content="done 24 failed 0"></head><body><h1 id="think-faster--системная-документация">Think Faster — системная документация</h1>
 <p>Версия документа: <strong>2026-09-29</strong>. Собран из разделов сервисов и частей инфраструктуры скриптом
-<code>docs/system/build.py</code> (think-infra, ветка <code>dev@8fe3b0b</code>).</p>
+<code>docs/system/build.py</code> (think-infra, ветка <code>TF-Infra-DocsOps@3897aa5</code>).</p>
 <table>
 <thead>
 <tr>
@@ -47,7 +47,7 @@ blockquote { margin: 8px 0; padding: 4px 12px; border-left: 4px solid var(--line
 <tr>
 <td>I–II, IV–IX, приложения</td>
 <td>think-infra</td>
-<td><code>dev@8fe3b0b</code></td>
+<td><code>TF-Infra-DocsOps@3897aa5</code></td>
 </tr>
 <tr>
 <td>Часть III — tf-auth</td>
@@ -460,7 +460,7 @@ tf-model. «VII-5» — строка 5 таблицы Части VII. Ссылк
 </tr>
 <tr>
 <td>Сервер</td>
-<td><code>176.123.167.161</code>, пользователь <code>user1</code></td>
+<td>dev-сервер команды (адрес — у администратора), пользователь <code>user1</code></td>
 <td><code>45.87.41.186</code> (<code>predictor-home</code>), пользователь <code>grisha</code></td>
 </tr>
 <tr>
@@ -1116,7 +1116,7 @@ tf-admin. Секреты лежат в <code>secret/</code> → <code>tf/</code>
 <li><strong>Схема <code>audit</code>:</strong> роль <code>tf-svc-tf-audit</code> есть, а строки <code>audit</code> в <code>schemas.conf</code> и паролей в <code>secrets.conf</code>
   нет. Их убрали сознательно (коммит 13d1fdb): без паролей в <code>secrets.conf</code> выкатка <code>postgree</code> остановилась бы.
   Заводится отдельным шагом администратора (Часть VIII, № 3).</li>
-<li>Доступ людей: dev — <code>176.123.167.161:5432</code>; prod — только SSH-туннель на <code>127.0.0.1:15432</code> (pgAdmin: вкладка
+<li>Доступ людей: dev — адрес dev-сервера, порт 5432 (выдаёт администратор стенда); prod — только SSH-туннель на <code>127.0.0.1:15432</code> (pgAdmin: вкладка
   SSH Tunnel, Identity file). Пароли — <code>scripts/secrets.sh get &lt;КЛЮЧ&gt;</code> под личным токеном.</li>
 <li>Бэкап: cron в 04:00, <code>pg_dump -Fc</code> в том <code>postgres_backups</code>, хранятся 7 дней. Бэкап лежит на том же
   сервере, копии вне сервера нет.</li>
@@ -7482,7 +7482,7 @@ root-токен. Проверить ключи, не получая root, мож
 <ol>
 <li>Пароль: <code>scripts/secrets.sh get POSTGRES_PASSWORD</code> (или <code>TF_PG_&lt;СХЕМА&gt;_USER_PASSWORD</code>) под личным токеном.
    На prod для повседневной работы берите пользователя схемы, а не суперпользователя <code>tf</code>.</li>
-<li>dev: <code>176.123.167.161:5432</code>, база <code>tf</code>.</li>
+<li>dev: адрес dev-сервера (выдаёт администратор стенда), порт <code>5432</code>, база <code>tf</code>.</li>
 <li>prod: SSH-туннель. В pgAdmin на вкладке SSH Tunnel: host <code>45.87.41.186</code>, port 22, свой пользователь,
    Authentication — Identity file (закрытый ключ, <strong>без</strong> <code>.pub</code>), Password — пароль от ключа, если он есть.
    На вкладке Connection: <code>127.0.0.1:15432</code>, база <code>tf</code>.</li>
@@ -8221,7 +8221,7 @@ prod), <strong>В</strong> — высокий, <strong>С</strong> — сред�
 <tr>
 <td>7</td>
 <td>Роли и права</td>
-<td>В tf-auth одно право — <code>SuperUser</code>, роли ведёт BFF (RBAC). Контракт — концепт <a href="https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/common/права-и-аудит.md">Think-Faster: docs/common/права-и-аудит.md</a> (агенты сервисов его не нашли); реализация от него отходит: нет <code>scope</code> у техучёток и области видимости в грантах. Создание учётки (<code>/auth/create</code>) требует <code>SuperUser</code> в tf-auth, который выдаётся только SQL-запросом</td>
+<td>В tf-auth одно право — <code>SuperUser</code>, роли ведёт BFF (RBAC). Контракт — концепт <a href="https://github.com/Think-Faster/Think-Faster/blob/main/docs/common/права-и-аудит.md">Think-Faster: docs/common/права-и-аудит.md</a> (агенты сервисов его не нашли); реализация от него отходит: нет <code>scope</code> у техучёток и области видимости в грантах. Создание учётки (<code>/auth/create</code>) требует <code>SuperUser</code> в tf-auth, который выдаётся только SQL-запросом</td>
 <td>tf-auth, tf-bff, tf-front</td>
 <td><strong>С</strong></td>
 </tr>

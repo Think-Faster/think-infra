@@ -6,7 +6,7 @@
 
 **Где код.** tf-auth — [think-auth@prod](https://github.com/Think-Faster/think-auth/tree/prod), права — [think-bff@prod](https://github.com/Think-Faster/think-bff/tree/prod),
 интерфейс — [think-front@prod](https://github.com/Think-Faster/think-front/tree/prod), инфраструктура — [think-infra@dev](https://github.com/Think-Faster/think-infra/tree/dev),
-концепт прав и аудита — [Think-Faster: docs/common/права-и-аудит.md](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/common/права-и-аудит.md).
+концепт прав и аудита — [Think-Faster: docs/common/права-и-аудит.md](https://github.com/Think-Faster/Think-Faster/blob/main/docs/common/права-и-аудит.md).
 Подробные разделы сервисов — [SYSTEM.md, Часть III](../system/SYSTEM.md).
 
 ## 1.1. Куда входить
@@ -101,11 +101,11 @@ sequenceDiagram
 | Сервис | Что проверяет | Код |
 |---|---|---|
 | tf-bff | подпись, `iss`, `aud`, срок (сдвиг 30 с), `sub` → профиль | [JwtValidator.cs](https://github.com/Think-Faster/think-bff/blob/prod/BFF/src/BFF.Infrastructure/Auth/JwtValidator.cs) |
-| tf-funnel | RS256, `aud=api`, `iss ∈ {auth-service, tf-auth}`, `typ=access`; право шины `telemetry.push` | [docs/backend/funnel/kit.go](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/funnel/kit.go) |
-| tf-model, tf-audit | то же (общий пакет tfkit); техучётка — `kind: service`, `scope` или `sub` из списка | [docs/backend/tfkit/tfkit.py](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/tfkit/tfkit.py) |
+| tf-funnel | RS256, `aud=api`, `iss ∈ {auth-service, tf-auth}`, `typ=access`; право шины `telemetry.push` | [docs/backend/funnel/kit.go](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/funnel/kit.go) |
+| tf-model, tf-audit | то же (общий пакет tfkit); техучётка — `kind: service`, `scope` или `sub` из списка | [docs/backend/tfkit/tfkit.py](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/tfkit/tfkit.py) |
 
 **Техучётки.** Концепт предусматривает для сервисов токены с `kind: service` и списком разрешённых
-действий `scope` ([права-и-аудит.md §2–3](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/common/права-и-аудит.md)). В tf-auth их **пока нет**: все токены
+действий `scope` ([права-и-аудит.md §2–3](https://github.com/Think-Faster/Think-Faster/blob/main/docs/common/права-и-аудит.md)). В tf-auth их **пока нет**: все токены
 `kind: user`, без `scope`. Как это обходится:
 - tf-funnel принимает `sub` учётки шины из списка `TF_FUNNEL_SERVICE_SUBS` (Vault `app/tf-funnel`);
 - tf-model (`/forecast`, `/history`) и tf-audit (`/events`) обхода нет, эти ручки пока недоступны.
@@ -160,7 +160,7 @@ curl -s -b jar.txt https://thinkfaster.ru/api/ml/status
   [think-infra: samba/](https://github.com/Think-Faster/think-infra/tree/dev/samba). Он собирается и настраивается,
   но в выкатку стендов не входит.
 - **Нет:** входа через каталог в tf-auth. Схема перехода описана в концепте
-  ([права-и-аудит.md §5.1, вариант В](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/common/права-и-аудит.md)):
+  ([права-и-аудит.md §5.1, вариант В](https://github.com/Think-Faster/Think-Faster/blob/main/docs/common/права-и-аудит.md)):
   учётка отделяется от способа входа (`password` | `ldap`), а группа BFF получает поле `external_ref` на
   группу AD. Это одна миграция в tf-auth и сопоставление групп в BFF.
 
@@ -171,7 +171,7 @@ curl -s -b jar.txt https://thinkfaster.ru/api/ml/status
 | Серверы стендов | SSH по ключу | [SYSTEM.md, 4.7](../system/SYSTEM.md) |
 | Секреты (Vault) | личный токен `tf-admin`; веб-интерфейс `https://vault.greefob.ru` (dev) или SSH-туннель | [SYSTEM.md, 2.3, 4.6](../system/SYSTEM.md) |
 | Сервисы → Vault | AppRole `tf-svc-<сервис>`: `role_id` + `secret_id` из GitHub Environment | [hashicorp/services.conf](https://github.com/Think-Faster/think-infra/blob/dev/hashicorp/services.conf) |
-| PostgreSQL | dev — `176.123.167.161:5432`; prod — SSH-туннель на `127.0.0.1:15432`; пользователи схем `*_user` / `*_admin` | [SYSTEM.md, 2.5, 4.7](../system/SYSTEM.md) |
+| PostgreSQL | dev — адрес dev-сервера, порт 5432 (выдаёт администратор стенда); prod — SSH-туннель на `127.0.0.1:15432`; пользователи схем `*_user` / `*_admin` | [SYSTEM.md, 2.5, 4.7](../system/SYSTEM.md) |
 | RabbitMQ UI | SSH-туннель на `15672`, пользователь `admin` | [rabbitmq/README.md](https://github.com/Think-Faster/think-infra/blob/dev/rabbitmq/README.md) |
 | Выкатка из GitHub | пары AppRole в Environments `dev`/`prod` репозиториев | [06. Деплой](06-deploy.md) |
 

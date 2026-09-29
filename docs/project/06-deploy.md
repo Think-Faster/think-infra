@@ -111,7 +111,7 @@ docker compose build && docker compose up -d
 psql "<строка подключения bff_admin>" -f <Think-Faster>/docs/backend/seed/seed.sql
 ```
 
-Описание данных — [домены-и-сущности.md §13](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/домены-и-сущности.md).
+Описание данных — [домены-и-сущности.md §13](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/домены-и-сущности.md).
 
 ### A5. tf-front
 
@@ -124,7 +124,7 @@ git clone -b prod https://github.com/Think-Faster/think-front.git && cd think-fr
 ### A6. tf-funnel
 
 Готовый образ — Docker Hub (`<аккаунт>/tf-funnel:prod-<sha>`, workflow
-[deploy-funnel-prod.yml](https://github.com/GroznyiBombila/Think-Faster/blob/main/.github/workflows/deploy-funnel-prod.yml)). Или сборка
+[deploy-funnel-prod.yml](https://github.com/Think-Faster/Think-Faster/blob/main/.github/workflows/deploy-funnel-prod.yml)). Или сборка
 **не на сервере стенда** ([Р-49](03-decisions.md)):
 
 ```bash
@@ -142,7 +142,7 @@ docker run -d --name tf-funnel --network think-fast-net --restart unless-stopped
 ### A7. tf-model
 
 Образ собирается из Think-Faster, пакет модели добавляется вторым слоем
-([документация.md, прил. Б.3–Б.4](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/документация.md)):
+([документация.md, прил. Б.3–Б.4](https://github.com/Think-Faster/Think-Faster/blob/main/docs/документация.md)):
 
 ```bash
 docker build -f ML/service/Dockerfile -t tf-model:base .
@@ -183,7 +183,7 @@ TF_STAND=prod scripts/deploy.sh mailing && TF_STAND=prod scripts/deploy.sh teleg
 
 - **Шина**: `sub` её учётки → `TF_FUNNEL_SERVICE_SUBS`, IP → `FUNNEL_EVENTS_ALLOW`, выкатка web-server
   ([SYSTEM.md 9.3](../system/SYSTEM.md)).
-- **Эмулятор** (только не на prod): workflow [deploy-emulator-dev.yml](https://github.com/GroznyiBombila/Think-Faster/blob/main/.github/workflows/deploy-emulator-dev.yml)
+- **Эмулятор** (только не на prod): workflow [deploy-emulator-dev.yml](https://github.com/Think-Faster/Think-Faster/blob/main/.github/workflows/deploy-emulator-dev.yml)
   и `TF_FUNNEL_PULL=http://tf-emulator:8000` у воронки.
 - **История**: пакеты из CSV в `POST /api/funnel/events` ([04. Методы 4.6](04-methods.md)).
 
@@ -199,13 +199,13 @@ TF_STAND=prod scripts/deploy.sh mailing && TF_STAND=prod scripts/deploy.sh teleg
 
 ## 6.3. Вариант Б: локальный стенд потока
 
-Файлы — [Think-Faster: docs/backend/stand.yml](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/stand.yml) и
-[compose.yml](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/compose.yml). Redis, RabbitMQ и Kafka берутся из клона
+Файлы — [Think-Faster: docs/backend/stand.yml](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/stand.yml) и
+[compose.yml](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/compose.yml). Redis, RabbitMQ и Kafka берутся из клона
 think-infra без изменений. К ним добавляются dev-Vault с тестовыми секретами, PostgreSQL со схемой аудита
 и эмулятор.
 
 ```bash
-git clone https://github.com/GroznyiBombila/Think-Faster.git && git clone https://github.com/Think-Faster/think-infra.git
+git clone https://github.com/Think-Faster/Think-Faster.git && git clone https://github.com/Think-Faster/think-infra.git
 ```
 
 ```bash

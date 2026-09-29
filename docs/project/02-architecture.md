@@ -7,7 +7,7 @@
 
 | Репозиторий | Ветки: рабочая / выпуск | Что внутри |
 |---|---|---|
-| [GroznyiBombila/Think-Faster](https://github.com/GroznyiBombila/Think-Faster) | `main` | модель и исследование (`ML/`), сервисы tf-model, tf-funnel, tf-audit, общий пакет `tfkit` (`docs/backend/`), ТЗ и проектные документы (`docs/`) |
+| [Think-Faster/Think-Faster](https://github.com/Think-Faster/Think-Faster) | `main` | модель и исследование (`ML/`), сервисы tf-model, tf-funnel, tf-audit, общий пакет `tfkit` (`docs/backend/`), ТЗ и проектные документы (`docs/`) |
 | [Think-Faster/think-infra](https://github.com/Think-Faster/think-infra) | `dev` / `prod` | Vault, PostgreSQL, Kafka, RabbitMQ, Redis, nginx, tf-mail, tf-tg, Samba AD, выкатка стендов |
 | [Think-Faster/think-auth](https://github.com/Think-Faster/think-auth) | `dev` / `prod` | tf-auth: учётки, вход, JWT |
 | [Think-Faster/think-bff](https://github.com/Think-Faster/think-bff) | `dev` / `prod` | tf-bff: права, объекты, прогнозы, заявки, рассылка |
@@ -40,7 +40,7 @@ flowchart LR
 | Настройка | tf-front → tf-bff → tf-model | доли тревог, версии модели, игнорируемые периоды | §18 |
 
 Роли и сценарии простым языком — [08. Анамнез](08-overview.md).
-Исходные схемы IDEF-0/IDEF-1 — [Think-Faster: docs/common/](https://github.com/GroznyiBombila/Think-Faster/tree/main/docs/common).
+Исходные схемы IDEF-0/IDEF-1 — [Think-Faster: docs/common/](https://github.com/Think-Faster/Think-Faster/tree/main/docs/common).
 
 ## 2.3. Компонентная архитектура
 
@@ -84,19 +84,19 @@ flowchart TB
 | tf-front | TypeScript, React 19, Create React App | react-router-dom 7, zustand 5, axios 1; карта и графики — собственная отрисовка, внешних картографических библиотек нет | [deploy/Dockerfile](https://github.com/Think-Faster/think-front/blob/prod/deploy/Dockerfile): node 22 → nginx 1.29 |
 | tf-bff | C#, .NET 8, ASP.NET Core | EF Core + Npgsql, FluentValidation, Serilog, RabbitMQ.Client 7, Confluent.Kafka, StackExchange.Redis | [deploy/Dockerfile](https://github.com/Think-Faster/think-bff/blob/prod/BFF/deploy/Dockerfile): sdk 8 → aspnet 8 alpine |
 | tf-auth | C#, .NET 8, ASP.NET Core | EF Core + Npgsql, Argon2id, System.IdentityModel.Tokens.Jwt, StackExchange.Redis | [AuthService/Dockerfile](https://github.com/Think-Faster/think-auth/blob/prod/AuthService/Dockerfile) |
-| tf-funnel | Go 1.27 | franz-go (Kafka), golang-jwt v5, go-redis v9, coder/websocket, klauspost/compress (zstd) | [docs/backend/funnel/Dockerfile](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/funnel/Dockerfile): golang → distroless |
-| tf-model | Python 3.12 | CatBoost, XGBoost, LightGBM (исследование), PyTorch 2.5 (TCN), DuckDB, Polars, FastAPI, confluent-kafka, pika, redis | [ML/service/Dockerfile](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/service/Dockerfile) |
-| tf-audit | Python 3.12 | psycopg 3, redis, FastAPI, PyJWT, cryptography | [docs/backend/audit/Dockerfile](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/audit/Dockerfile) |
+| tf-funnel | Go 1.27 | franz-go (Kafka), golang-jwt v5, go-redis v9, coder/websocket, klauspost/compress (zstd) | [docs/backend/funnel/Dockerfile](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/funnel/Dockerfile): golang → distroless |
+| tf-model | Python 3.12 | CatBoost, XGBoost, LightGBM (исследование), PyTorch 2.5 (TCN), DuckDB, Polars, FastAPI, confluent-kafka, pika, redis | [ML/service/Dockerfile](https://github.com/Think-Faster/Think-Faster/blob/main/ML/service/Dockerfile) |
+| tf-audit | Python 3.12 | psycopg 3, redis, FastAPI, PyJWT, cryptography | [docs/backend/audit/Dockerfile](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/audit/Dockerfile) |
 | tf-mail, tf-tg | Python 3.12 | pika, redis, email-validator; Telegram — стандартный `urllib` | [mailing/Dockerfile](https://github.com/Think-Faster/think-infra/blob/dev/mailing/Dockerfile), [telegram/Dockerfile](https://github.com/Think-Faster/think-infra/blob/dev/telegram/Dockerfile) |
 | tf-emulator | Python, Django | — | собирается workflow `deploy-emulator-dev.yml` |
 | Инфраструктура | Linux, Docker Compose | nginx 1.29 + certbot, Vault 1.20 (raft), PostgreSQL 16, Kafka 4.0 (KRaft), RabbitMQ 4.1, Redis 7, Samba AD | [think-infra](https://github.com/Think-Faster/think-infra/tree/dev) |
 | CI/CD | GitHub Actions | self-hosted runner prod, appleboy/ssh-action, Docker Hub (образ воронки) | workflow в каждом репозитории |
-| Исследование | Python 3.12, CUDA 12.4 | pandas, DuckDB, Parquet, scikit-learn, Open-Meteo (погода) | [ML/requirements.txt](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/requirements.txt) |
+| Исследование | Python 3.12, CUDA 12.4 | pandas, DuckDB, Parquet, scikit-learn, Open-Meteo (погода) | [ML/requirements.txt](https://github.com/Think-Faster/Think-Faster/blob/main/ML/requirements.txt) |
 
-Полный перечень библиотек с версиями — в файлах зависимостей: [ML/service/requirements.txt](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/service/requirements.txt),
-[docs/backend/funnel/go.mod](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/funnel/go.mod), `*.csproj` BFF и tf-auth,
+Полный перечень библиотек с версиями — в файлах зависимостей: [ML/service/requirements.txt](https://github.com/Think-Faster/Think-Faster/blob/main/ML/service/requirements.txt),
+[docs/backend/funnel/go.mod](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/funnel/go.mod), `*.csproj` BFF и tf-auth,
 [app/package.json](https://github.com/Think-Faster/think-front/blob/prod/app/package.json), [mailing/requirements.txt](https://github.com/Think-Faster/think-infra/blob/dev/mailing/requirements.txt).
-Сводный перечень есть и в [Think-Faster: docs/документация.md, приложение В](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/документация.md).
+Сводный перечень есть и в [Think-Faster: docs/документация.md, приложение В](https://github.com/Think-Faster/Think-Faster/blob/main/docs/документация.md).
 
 ## 2.5. Базы и хранилища данных
 
@@ -123,7 +123,7 @@ flowchart TB
 | Заявки | `tasks`, `task_predictions`, `task_assignments`, `task_reports`, `task_returns`, `incidents` |
 | Настройки модели | `model_versions`, `coefficients`, `retrain_jobs`, `ignored_ranges`, `work_schedule` |
 
-Описание сущностей — [Think-Faster: docs/backend/домены-и-сущности.md](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/домены-и-сущности.md).
+Описание сущностей — [Think-Faster: docs/backend/домены-и-сущности.md](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/домены-и-сущности.md).
 
 ### Прочие хранилища
 
@@ -163,7 +163,7 @@ flowchart TB
 
 Сидинг BFF ([001_seed_initial_data.sql](https://github.com/Think-Faster/think-bff/blob/prod/BFF/scripts/001_seed_initial_data.sql)) заводит одну системную группу — `admins`, с
 `Manage` на все 15 ресурсов. Рабочие роли стенда заводятся данными стенда
-([Think-Faster: docs/backend/seed/groups.csv, grants.csv](https://github.com/GroznyiBombila/Think-Faster/tree/main/docs/backend/seed)):
+([Think-Faster: docs/backend/seed/groups.csv, grants.csv](https://github.com/Think-Faster/Think-Faster/tree/main/docs/backend/seed)):
 
 | Роль (группа) | Вложенные группы | Права (C — создать, R — читать, U — изменить, D — удалить, E — экспорт) |
 |---|---|---|
@@ -193,7 +193,7 @@ Export, Import, Manage`). Выдаёт пользователь с `permissions:
 
 ### Отличия от концепта и ТЗ
 
-Концепт ([права-и-аудит.md §3–4](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/common/права-и-аудит.md)) предлагал четыре роли:
+Концепт ([права-и-аудит.md §3–4](https://github.com/Think-Faster/Think-Faster/blob/main/docs/common/права-и-аудит.md)) предлагал четыре роли:
 техник, диспетчер района, центральный диспетчер, администратор. Кроме того, у каждой группы там была
 **область видимости** — узел дерева объектов. Реализация:
 - **роли** — сделаны группами (инженер ≈ техник, диспетчер, главный диспетчер ≈ центральный, администратор);

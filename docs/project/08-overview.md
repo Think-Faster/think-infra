@@ -25,9 +25,9 @@
 
 | Дата | Что произошло |
 |---|---|
-| 15.09 | старт: разбор ТЗ, датасет — 8 журналов за 2019–2026, 313 млн записей ([Status.md](https://github.com/GroznyiBombila/Think-Faster/blob/main/Status.md)) |
-| 16–18.09 | план и стек, вопросы организаторам, встреча по структуре бэкенда: сервисы, токены, роли ([tasks/plan.md](https://github.com/GroznyiBombila/Think-Faster/blob/main/tasks/plan.md)) |
-| 19–25.09 | исследование модели: 65 заходов, записаны и выигрышные, и отброшенные варианты ([ML/results/analytics.md](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/results/analytics.md)) |
+| 15.09 | старт: разбор ТЗ, датасет — 8 журналов за 2019–2026, 313 млн записей ([Status.md](https://github.com/Think-Faster/Think-Faster/blob/main/Status.md)) |
+| 16–18.09 | план и стек, вопросы организаторам, встреча по структуре бэкенда: сервисы, токены, роли ([tasks/plan.md](https://github.com/Think-Faster/Think-Faster/blob/main/tasks/plan.md)) |
+| 19–25.09 | исследование модели: 65 заходов, записаны и выигрышные, и отброшенные варианты ([ML/results/analytics.md](https://github.com/Think-Faster/Think-Faster/blob/main/ML/results/analytics.md)) |
 | 20–27.09 | сервисы: вход, права и заявки (BFF), интерфейс, воронка, модель, аудит |
 | 26–27.09 | инфраструктура dev-стенда: секреты в Vault, почта и Telegram, веб-интерфейс Vault, воронка |
 | 28–29.09 | prod-стенд `thinkfaster.ru`: выкатка инфраструктуры и сервисов, выдача доступов, почта через Resend |
