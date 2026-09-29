@@ -8,7 +8,7 @@ Telegram. Стенд поднимается с нуля одной команд�
 
 | Раздел | Что внутри |
 |---|---|
-| [docs/project](docs/project) | документация по пунктам экспертизы, у каждого файла есть PDF: [вход](docs/project/01-auth.md), [архитектура и стек](docs/project/02-architecture.md), [решения, в том числе отброшенные](docs/project/03-decisions.md), [методы](docs/project/04-methods.md), [соответствие ТЗ](docs/project/05-tz-compliance.md), [развёртывание своими силами](docs/project/06-deploy.md), [обзор простым языком](docs/project/08-overview.md), [эксплуатация, риски и план развития](docs/project/09-operations.md) |
+| [docs/project](docs/project) | документация по пунктам экспертизы, у каждого файла есть PDF: [вход](docs/project/01-auth.md), [архитектура и стек](docs/project/02-architecture.md), [решения, в том числе отброшенные](docs/project/03-decisions.md), [методы](docs/project/04-methods.md), [соответствие ТЗ](docs/project/05-tz-compliance.md), [развёртывание своими силами](docs/project/06-deploy.md), [презентация](docs/project/07-presentation.pdf), [обзор простым языком](docs/project/08-overview.md), [эксплуатация, риски и план развития](docs/project/09-operations.md) |
 | [docs/system](docs/system) | описание системы целиком и по сервисам: [SYSTEM.md](docs/system/SYSTEM.md), части и карточки сервисов |
 | [QUICK_START.md](QUICK_START.md) | пошаговый подъём своего стенда без предварительных знаний |
 
