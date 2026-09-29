@@ -174,7 +174,7 @@ flowchart LR
 | | dev | prod |
 |---|---|---|
 | Домен | `greefob.ru` | `thinkfaster.ru`, `www.thinkfaster.ru` |
-| Сервер | `176.123.167.161`, пользователь `user1` | `45.87.41.186` (`predictor-home`), пользователь `grisha` |
+| Сервер | dev-сервер команды (адрес — у администратора), пользователь `user1` | `45.87.41.186` (`predictor-home`), пользователь `grisha` |
 | Каталог выкатки инфраструктуры (`TF_INFRA_DIR`) | `/home/user1/tf/think-prod` | `/srv/thinkfaster/tf.infra` |
 | Клон think-infra на сервере | `~/tf/infra-src` | `/srv/thinkfaster/tf/think-infra` |
 | Код приложений | по workflow сервисов | `/srv/thinkfaster/services/<репозиторий>` |

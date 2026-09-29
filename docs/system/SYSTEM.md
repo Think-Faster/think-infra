@@ -1,11 +1,11 @@
 # Think Faster — системная документация
 
 Версия документа: **2026-09-29**. Собран из разделов сервисов и частей инфраструктуры скриптом
-`docs/system/build.py` (think-infra, ветка `dev@8fe3b0b`).
+`docs/system/build.py` (think-infra, ветка `TF-Infra-DocsOps@3897aa5`).
 
 | Часть | Источник | Версия |
 |---|---|---|
-| I–II, IV–IX, приложения | think-infra | `dev@8fe3b0b` |
+| I–II, IV–IX, приложения | think-infra | `TF-Infra-DocsOps@3897aa5` |
 | Часть III — tf-auth | think-auth | `TF-Auth-Docs@6947f44` |
 | Часть III — tf-bff | think-bff | `dev@3dc8875` |
 | Часть III — tf-front | think-front | `TF-Front-Docs@46e013e` |
@@ -274,7 +274,7 @@ flowchart LR
 | | dev | prod |
 |---|---|---|
 | Домен | `greefob.ru` | `thinkfaster.ru`, `www.thinkfaster.ru` |
-| Сервер | `176.123.167.161`, пользователь `user1` | `45.87.41.186` (`predictor-home`), пользователь `grisha` |
+| Сервер | dev-сервер команды (адрес — у администратора), пользователь `user1` | `45.87.41.186` (`predictor-home`), пользователь `grisha` |
 | Каталог выкатки инфраструктуры (`TF_INFRA_DIR`) | `/home/user1/tf/think-prod` | `/srv/thinkfaster/tf.infra` |
 | Клон think-infra на сервере | `~/tf/infra-src` | `/srv/thinkfaster/tf/think-infra` |
 | Код приложений | по workflow сервисов | `/srv/thinkfaster/services/<репозиторий>` |
@@ -480,7 +480,7 @@ tf-admin. Секреты лежат в `secret/` → `tf/`. На prod интер
 - **Схема `audit`:** роль `tf-svc-tf-audit` есть, а строки `audit` в `schemas.conf` и паролей в `secrets.conf`
   нет. Их убрали сознательно (коммит 13d1fdb): без паролей в `secrets.conf` выкатка `postgree` остановилась бы.
   Заводится отдельным шагом администратора (Часть VIII, № 3).
-- Доступ людей: dev — `176.123.167.161:5432`; prod — только SSH-туннель на `127.0.0.1:15432` (pgAdmin: вкладка
+- Доступ людей: dev — адрес dev-сервера, порт 5432 (выдаёт администратор стенда); prod — только SSH-туннель на `127.0.0.1:15432` (pgAdmin: вкладка
   SSH Tunnel, Identity file). Пароли — `scripts/secrets.sh get <КЛЮЧ>` под личным токеном.
 - Бэкап: cron в 04:00, `pg_dump -Fc` в том `postgres_backups`, хранятся 7 дней. Бэкап лежит на том же
   сервере, копии вне сервера нет.
@@ -3777,7 +3777,7 @@ read -rs -p "ROOT: " VAULT_TOKEN; echo; export VAULT_TOKEN
 
 1. Пароль: `scripts/secrets.sh get POSTGRES_PASSWORD` (или `TF_PG_<СХЕМА>_USER_PASSWORD`) под личным токеном.
    На prod для повседневной работы берите пользователя схемы, а не суперпользователя `tf`.
-2. dev: `176.123.167.161:5432`, база `tf`.
+2. dev: адрес dev-сервера (выдаёт администратор стенда), порт `5432`, база `tf`.
 3. prod: SSH-туннель. В pgAdmin на вкладке SSH Tunnel: host `45.87.41.186`, port 22, свой пользователь,
    Authentication — Identity file (закрытый ключ, **без** `.pub`), Password — пароль от ключа, если он есть.
    На вкладке Connection: `127.0.0.1:15432`, база `tf`.
@@ -4050,7 +4050,7 @@ prod), **В** — высокий, **С** — средний, **Н** — низк
 | 4 | Выход из системы | **Закрыто 29.09:** `POST /api/auth/logout` в tf-auth `prod` (ветка `TF-Auth-Logout`). Раздел tf-auth в Части III написан до этого. Остаётся: refresh-токен не отзывается на сервере и действует до `exp` | tf-auth, tf-front | **Н** |
 | 5 | Схема `audit` не заведена | Роль Vault `tf-svc-tf-audit` есть, а схемы, ролей БД и `postgres/audit` в `secrets.conf` нет. tf-audit на dev и prod не стартует. Потоки Redis копятся до `MAXLEN ~1 млн` и при долгом простое обрезаются: события теряются | think-infra, tf-audit | **В** |
 | 6 | Формат ключа и ротация | `/.well-known/jwks` отдаёт PEM, а не JWKS. Ключ один, `kid` фиксированный. Ротация разлогинивает всех, а потребители держат старый ключ в кеше до 1 ч (tf-funnel, tfkit) или 60 мин (tf-bff) и всё это время отвергают новые токены | tf-auth, все проверяющие токены | **С** |
-| 7 | Роли и права | В tf-auth одно право — `SuperUser`, роли ведёт BFF (RBAC). Контракт — концепт [Think-Faster: docs/common/права-и-аудит.md](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/common/права-и-аудит.md) (агенты сервисов его не нашли); реализация от него отходит: нет `scope` у техучёток и области видимости в грантах. Создание учётки (`/auth/create`) требует `SuperUser` в tf-auth, который выдаётся только SQL-запросом | tf-auth, tf-bff, tf-front | **С** |
+| 7 | Роли и права | В tf-auth одно право — `SuperUser`, роли ведёт BFF (RBAC). Контракт — концепт [Think-Faster: docs/common/права-и-аудит.md](https://github.com/Think-Faster/Think-Faster/blob/main/docs/common/права-и-аудит.md) (агенты сервисов его не нашли); реализация от него отходит: нет `scope` у техучёток и области видимости в грантах. Создание учётки (`/auth/create`) требует `SuperUser` в tf-auth, который выдаётся только SQL-запросом | tf-auth, tf-bff, tf-front | **С** |
 | 8 | Справочник модели | tf-model ждёт строки `object`/`channel` в `tf.ingest.reference`, но их никто не публикует: воронка пишет туда только `channel.status`. Новые объекты и датчики попадут в модель только с новым образом. Логичный издатель — tf-bff: он владеет объектами и датчиками | tf-model, tf-bff, tf-funnel | **С** |
 | 9 | Дубли событий | При частичном подтверждении Kafka воронка отвечает `503`, шина повторяет пакет, и подтверждённая часть уходит повторно. `ид_события` необязателен. Дубли отбрасывает только модель (по ключу `channel, ts, value`), другие потребители их не отличат | tf-funnel, шина, будущие потребители | **С** |
 | 10 | Аудит уведомлений | tf-mail и tf-tg пишут `notify.sent`/`notify.failed` только в свой лог, а в поток `audit` — нет. tf-audit знает сервис `notify` (по старой заготовке `docs/backend/notify`) и ждёт от него событий | tf-mail, tf-tg, tf-audit | **С** |
