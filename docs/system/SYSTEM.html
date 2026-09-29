@@ -23,6 +23,7 @@ tr { page-break-inside: avoid; break-inside: avoid; }
 th, td { border: 1px solid var(--line); padding: 3px 6px; vertical-align: top; text-align: left;
          word-break: break-word; }
 th { background: var(--bg2); }
+th:first-child, td:first-child { word-break: normal; overflow-wrap: normal; hyphens: auto; }
 blockquote { margin: 8px 0; padding: 4px 12px; border-left: 4px solid var(--line); color: var(--muted); }
 .mermaid { text-align: center; background: #fff; border: 1px solid var(--line); border-radius: 5px;
            padding: 8px; margin: 10px 0; page-break-inside: avoid; break-inside: avoid; white-space: normal; }
@@ -31,7 +32,7 @@ blockquote { margin: 8px 0; padding: 4px 12px; border-left: 4px solid var(--line
 .toc ul, .toc ol { margin: 0; }
 </style><meta name="mermaid-status" content="done 24 failed 0"></head><body><h1 id="think-faster--системная-документация">Think Faster — системная документация</h1>
 <p>Версия документа: <strong>2026-09-29</strong>. Собран из разделов сервисов и частей инфраструктуры скриптом
-<code>docs/system/build.py</code> (think-infra, ветка <code>TF-Infra-Docs@8a18c26</code>).</p>
+<code>docs/system/build.py</code> (think-infra, ветка <code>TF-Infra-Docs@1d7ee3f</code>).</p>
 <table>
 <thead>
 <tr>
@@ -44,7 +45,7 @@ blockquote { margin: 8px 0; padding: 4px 12px; border-left: 4px solid var(--line
 <tr>
 <td>I–II, IV–IX, приложения</td>
 <td>think-infra</td>
-<td><code>TF-Infra-Docs@8a18c26</code></td>
+<td><code>TF-Infra-Docs@1d7ee3f</code></td>
 </tr>
 <tr>
 <td>Часть III — tf-auth</td>
@@ -8196,10 +8197,10 @@ prod), <strong>В</strong> — высокий, <strong>С</strong> — сред�
 </tr>
 <tr>
 <td>4</td>
-<td>Нет выхода</td>
-<td>В tf-auth нет <code>/logout</code>, HttpOnly-cookie фронт стереть не может, refresh не отзывается 24 ч. «Выйти» во фронте — видимость: после перезагрузки страницы пользователь снова внутри</td>
+<td>Выход из системы</td>
+<td><strong>Закрыто 29.09:</strong> <code>POST /api/auth/logout</code> в tf-auth <code>prod</code> (ветка <code>TF-Auth-Logout</code>). Раздел tf-auth в Части III написан до этого. Остаётся: refresh-токен не отзывается на сервере и действует до <code>exp</code></td>
 <td>tf-auth, tf-front</td>
-<td><strong>В</strong></td>
+<td><strong>Н</strong></td>
 </tr>
 <tr>
 <td>5</td>
@@ -8218,7 +8219,7 @@ prod), <strong>В</strong> — высокий, <strong>С</strong> — сред�
 <tr>
 <td>7</td>
 <td>Роли и права</td>
-<td>В tf-auth одно право — <code>SuperUser</code>, роли ведёт BFF (RBAC). Контракт <code>права-и-аудит.md</code>, на который ссылаются tf-auth, tfkit и tf-audit, в репозиториях не найден. Создание учётки (<code>/auth/create</code>) требует <code>SuperUser</code> в tf-auth, который выдаётся только SQL-запросом</td>
+<td>В tf-auth одно право — <code>SuperUser</code>, роли ведёт BFF (RBAC). Контракт — концепт <a href="https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/common/права-и-аудит.md">Think-Faster: docs/common/права-и-аудит.md</a> (агенты сервисов его не нашли); реализация от него отходит: нет <code>scope</code> у техучёток и области видимости в грантах. Создание учётки (<code>/auth/create</code>) требует <code>SuperUser</code> в tf-auth, который выдаётся только SQL-запросом</td>
 <td>tf-auth, tf-bff, tf-front</td>
 <td><strong>С</strong></td>
 </tr>
@@ -8348,6 +8349,13 @@ prod), <strong>В</strong> — высокий, <strong>С</strong> — сред�
 <td>tf-funnel, tf-model</td>
 <td><strong>Н</strong></td>
 </tr>
+<tr>
+<td>26</td>
+<td>Настройки модели передаются не все</td>
+<td>На <code>prod</code> BFF передаёт модели <code>model.switch</code>, <code>settings.operating</code>, <code>settings.gaps</code> (ручки <code>/model-commands/*</code>, <code>ModelSettingsRelay.cs</code>). <strong>Не передаются</strong> <code>settings.works</code> (график работ хранится в BFF, модель берёт свою копию из пакета) и <code>retrain.request</code>. Старые таблицы BFF (<code>coefficients</code>, <code>model-versions</code>, <code>ignored-ranges</code>) дублируют состояние модели и расходятся с ним</td>
+<td>tf-bff, tf-model, tf-front</td>
+<td><strong>С</strong></td>
+</tr>
 </tbody>
 </table>
 <h2 id="что-совместимо-проверено-сверкой">Что совместимо (проверено сверкой)</h2>
@@ -8425,9 +8433,9 @@ prod), <strong>В</strong> — высокий, <strong>С</strong> — сред�
 </tr>
 <tr>
 <td>7</td>
-<td><code>POST /logout</code> в tf-auth (удалить cookie, отзыв refresh по <code>jti</code> в Redis) и вызов из фронта</td>
-<td>tf-auth, tf-front</td>
-<td>0,5–1 день</td>
+<td>~~<code>POST /logout</code>~~ — сделано 29.09; осталось: отзыв refresh по <code>jti</code> в Redis</td>
+<td>tf-auth</td>
+<td>0,5 дня</td>
 <td>VII-4</td>
 </tr>
 <tr>
@@ -8535,6 +8543,12 @@ prod), <strong>В</strong> — высокий, <strong>С</strong> — сред�
 <td>инфра + tf-front</td>
 <td>0,5 дня</td>
 </tr>
+<tr>
+<td>22а</td>
+<td>Передача <code>settings.works</code> и <code>retrain.request</code> из BFF в модель; убрать дублирующие таблицы настроек в BFF</td>
+<td>tf-bff</td>
+<td>0,5–1 день</td>
+</tr>
 </tbody>
 </table>
 <h2 id="третья-очередь-развитие">Третья очередь: развитие</h2>
@@ -8549,7 +8563,7 @@ prod), <strong>В</strong> — высокий, <strong>С</strong> — сред�
 <tbody>
 <tr>
 <td>23</td>
-<td>Роли и права в токене или ручка прав по согласованному контракту «права-и-аудит»; положить сам контракт в общий репозиторий</td>
+<td>Роли и права по контракту <code>docs/common/права-и-аудит.md</code> (Think-Faster): область видимости в грантах, техучётки со <code>scope</code></td>
 <td>tf-auth, tf-bff</td>
 </tr>
 <tr>
@@ -8953,7 +8967,7 @@ v operator generate-root -decode="$enc" -otp="$otp"
 <td>tf-auth №2, tf-funnel, VII-1</td>
 </tr>
 <tr>
-<td>Роли и права в токене; где контракт «права-и-аудит»</td>
+<td>Роли и права: довести реализацию до концепта <code>docs/common/права-и-аудит.md</code> (Think-Faster) или пересмотреть концепт</td>
 <td>tf-auth, tf-bff</td>
 <td>tf-auth №1, VII-7</td>
 </tr>
