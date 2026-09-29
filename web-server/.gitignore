@@ -1,6 +1,8 @@
 .env
 
 nginx/nginx.conf
+nginx/nginx.conf.tmp
+nginx/tf.d/
 
 certbot/conf/*
 certbot/www/*

@@ -13,59 +13,51 @@ RabbitMQ здесь — для команд и задач, которые дол
 | `definitions.json` | Топология: vhost, exchange, очереди, привязки, политики (TTL, DLX, лимиты) |
 | `users.conf` | Пользователи сервисов и их права |
 | `rabbitmq.conf` | Настройки брокера: пороги алармов по памяти и диску |
-| `.env.template` | Шаблон `.env` с паролями |
 | `scripts/init.sh` | Применяет `definitions.json` и `users.conf` через HTTP API, идемпотентен |
 | `scripts/smoke-test.py` | Проверка критериев приёмки |
 
 ## Запуск
 
-### 1. Заполнить `.env`
+### 1. Секреты — в Vault
 
-```bash
-cd rabbitmq
-cp .env.template .env
-```
+Все пароли RabbitMQ лежат в Vault стенда по пути `secret/tf/rabbit`, файла `.env` с паролями нет.
+Список — в [secrets.conf](../secrets.conf), общий порядок работы — в [README.md](../README.md).
 
 | Переменная | Что это |
 |---|---|
-| `TF_RABBIT_ADMIN_PASSWORD` | Пароль администратора `admin`. Задаётся **при первом старте** пустого тома |
+| `TF_RABBIT_ADMIN_PASSWORD` | Пароль администратора `admin`. Применяется **только при первом старте** пустого тома |
 | `TF_RABBIT_BFF_PASSWORD` | Пароль `tf-bff` |
 | `TF_RABBIT_MODEL_PASSWORD` | Пароль `tf-model` |
 | `TF_RABBIT_EMAIL_PASSWORD` | Пароль `tf-notify-email` (контейнер почты) |
 | `TF_RABBIT_TELEGRAM_PASSWORD` | Пароль `tf-notify-telegram` (Telegram-бот) |
 
-Пароли — только латиница и цифры, сгенерировать: `openssl rand -hex 24`.
-
-### 2. Сохранить копию `.env` в Vault
-
-Как для Kafka: копия лежит в Vault по пути `secret/tf/rabbit`, ключи совпадают с именами переменных.
-Через веб-интерфейс Vault (`secret/` → **Create secret** → `tf/rabbit`) или из консоли:
+Сгенерировать недостающие (на сервере стенда, из корня репозитория):
 
 ```bash
-docker exec -e VAULT_TOKEN=<токен> -e VAULT_ADDR=http://127.0.0.1:8200 vault \
-  vault kv put secret/tf/rabbit $(grep -E '^[A-Z_]+=' .env | tr -d '\r')
+scripts/secrets.sh init rabbitmq
 ```
 
-Восстановить `.env` из Vault:
+### 2. Выкатка
 
-```bash
-for key in TF_RABBIT_ADMIN_PASSWORD TF_RABBIT_BFF_PASSWORD TF_RABBIT_MODEL_PASSWORD TF_RABBIT_EMAIL_PASSWORD TF_RABBIT_TELEGRAM_PASSWORD; do
-  echo "$key=$(docker exec -e VAULT_TOKEN=<токен> -e VAULT_ADDR=http://127.0.0.1:8200 vault vault kv get -field=$key secret/tf/rabbit)"
-done > .env
-```
-
-### 3. Поднять RabbitMQ
+Обычно — GitHub Actions: изменения в `rabbitmq/` при пуше в `dev`/`prod` выкатываются на свой стенд
+(`.github/workflows/deploy-rabbitmq.yml`). Вручную на сервере:
 
 ```bash
 docker network create think-fast-net   # если сети ещё нет
-docker compose up -d
-docker compose logs -f tf-rabbit-init  # итог: список очередей с политиками
+TF_STAND=<dev|prod> VAULT_TOKEN=<токен> scripts/deploy.sh rabbitmq
+```
+
+Для ручных команд `docker compose` в папке `rabbitmq` сначала загрузить секреты в оболочку:
+
+```bash
+eval "$(../scripts/secrets.sh env rabbitmq)"
+docker compose up tf-rabbit-init
 ```
 
 `tf-rabbit-init` ждёт, пока healthcheck брокера станет `healthy`, загружает топологию, создаёт
 пользователей и завершается с кодом 0 — статус `Exited (0)` это норма. Повторный запуск ничего
 не дублирует: exchange, очереди и привязки уже есть, политики, пароли и права перезаписываются
-значениями из файлов.
+значениями из файлов и Vault.
 
 Данные (очереди, сообщения, пользователи) лежат в именованном томе `tf-rabbit-data` и переживают
 пересоздание контейнера. Удаляет их только `docker compose down -v` или `docker volume rm tf-rabbit-data`.
@@ -116,7 +108,7 @@ docker compose logs -f tf-rabbit-init  # итог: список очередей
 | Хост | `tf-rabbit` (только из `think-fast-net`) |
 | Порт | `5672` (AMQP 0-9-1) |
 | vhost | `tf` |
-| Пользователь / пароль | из таблицы выше / переменная из `.env` |
+| Пользователь / пароль | из таблицы выше / переменная из Vault (`scripts/secrets.sh get <ПЕРЕМЕННАЯ>`) |
 
 Рекомендации:
 
@@ -125,20 +117,53 @@ docker compose logs -f tf-rabbit-init  # итог: список очередей
   Временная ошибка — `nack` с `requeue=true` (после 5 попыток сообщение уйдёт в DLQ).
   Сообщение, которое никогда не обработается, — сразу `reject` с `requeue=false`.
 
-### Для владельцев почты и Telegram-бота
+## Уведомления: почта и Telegram
 
-Передать владельцу (пароль — из `.env` / Vault, по защищённому каналу):
+Потребители живут в этом репозитории: [mailing/](../mailing/README.md) — контейнер `tf-mail`,
+[telegram/](../telegram/README.md) — `tf-tg`. Публикует `tf-bff`; ТЗ для него с примером на .NET —
+[docs/notify-tz/tf-bff.md](../docs/notify-tz/tf-bff.md).
 
+| Кто | Учётка брокера | Пароль в Vault | Что делает |
+|---|---|---|---|
+| `tf-bff` | `tf-bff` | `rabbit/bff` → `TF_RABBIT_BFF_PASSWORD` | публикует в `tf.notifications` |
+| `tf-mail` | `tf-notify-email` | `rabbit/email` → `TF_RABBIT_EMAIL_PASSWORD` | читает `tf.notify.email` |
+| `tf-tg` | `tf-notify-telegram` | `rabbit/telegram` → `TF_RABBIT_TELEGRAM_PASSWORD` | читает `tf.notify.telegram` |
+
+### Как публиковать (tf-bff)
+
+- exchange **`tf.notifications`**, routing key **`email`** или **`telegram`** — по сообщению на канал;
+  нужно письмо и Telegram — два сообщения с одним `notice_id`;
+- `content_type=application/json`, UTF-8, `delivery_mode=2`, publisher confirms, `mandatory=true`;
+- exchange и очереди **не объявлять** (прав `configure` нет).
+
+```json
+{
+  "schema": 1,
+  "notice_id": "0b6f3c1e-2f0a-4c55-9a55-3f1d6c0e8a11",
+  "ticket_id": 1042,
+  "kind": "fact",
+  "subject": "Загазованность: объект 5122",
+  "text": "Канал 196771 «Газовая охрана». Заявка 1042.",
+  "to": { "emails": ["dispatcher@example.com"], "usernames": ["ivan_petrov"], "chat_ids": [-1001234567890] },
+  "request_id": "e81b07c4f2a9"
+}
 ```
-Хост:          tf-rabbit:5672 (контейнер должен быть в сети think-fast-net)
-vhost:         tf
-Почта:         пользователь tf-notify-email,    очередь tf.notify.email
-Telegram:      пользователь tf-notify-telegram, очередь tf.notify.telegram
-Права:         только чтение своей очереди; очереди не объявлять (или passive=true)
-Подтверждение: ack — отправлено; nack requeue=true — повторить (не более 5 раз);
-               reject requeue=false — не отправлять, сообщение уйдёт в tf.dlq
-TTL:           24 часа, после этого неотправленное уведомление уходит в tf.dlq
-```
+
+| Поле | Обязательно | Что это |
+|---|---|---|
+| `notice_id` | да | UUID уведомления. Повтор с тем же `notice_id` не отправится второй раз тем, кому уже ушло (сутки) |
+| `subject` | да | тема письма / жирная строка в Telegram, до 255 символов; переводы строк заменяются пробелом |
+| `text` | да | текст, до 20 000 символов; для Telegram тема + текст — не длиннее 4096 |
+| `to.emails` | для `email` | адреса; отправляются пачками по 50 |
+| `to.usernames` | для `telegram` (или `chat_ids`) | имя пользователя Telegram; `chat_id` tf-tg берёт из «Старта» у бота |
+| `to.chat_ids` | для `telegram` (или `usernames`) | `chat_id` группы (число) или `@канал` |
+| `ticket_id`, `kind`, `request_id` | нет | попадают в лог потребителя для поиска (`notify.sent` / `notify.failed`) |
+| `schema` | нет | версия формата, сейчас `1` |
+
+Потребитель отвечает брокеру так: `ack` — отправлено; `reject` (сразу в `tf.dlq`) — сообщение не
+разобрать (не JSON, нет `notice_id`, нет адресатов, адрес с ошибкой) или не ушло никому по постоянной
+причине; `nack` с повтором — SMTP или Telegram недоступны, до 5 попыток, потом `tf.dlq`.
+Неотправленное за 24 часа (TTL) тоже уходит в `tf.dlq`.
 
 ## Management UI
 
@@ -167,7 +192,7 @@ ssh -L 15672:127.0.0.1:15672 <пользователь>@<сервер>
 2. В `definitions.json` добавить очередь (с `"x-queue-type": "quorum"`), привязку и, если нужно, exchange.
 3. Если у очереди свои TTL/лимиты — добавить политику; для `tf.notify.*` существующая политика подхватит её сама.
 4. Выдать права в `users.conf`.
-5. Применить: `docker compose up tf-rabbit-init`.
+5. Применить: выкатка (пуш в ветку стенда) или `docker compose up tf-rabbit-init` с загруженными секретами.
 
 Удаление очереди или exchange из `definitions.json` **не удаляет** их из брокера — это делается
 вручную в UI или командой `rabbitmqctl` (см. ниже). Аналогично с пользователями из `users.conf`.
@@ -192,9 +217,10 @@ docker exec tf-rabbit rabbitmqctl list_users
 docker exec tf-rabbit rabbitmqctl list_permissions -p tf
 docker exec tf-rabbit rabbitmq-diagnostics status
 
-# сменить пароль admin (пароль из .env действует только при первом старте):
-docker exec tf-rabbit rabbitmqctl change_password admin <новый пароль>
-# затем обновить TF_RABBIT_ADMIN_PASSWORD в .env и Vault и выполнить docker compose up -d
+# сменить пароль admin (пароль из Vault применяется только при первом старте):
+# 1) scripts/secrets.sh rotate TF_RABBIT_ADMIN_PASSWORD
+# 2) docker exec -i tf-rabbit rabbitmqctl change_password admin "$(scripts/secrets.sh get TF_RABBIT_ADMIN_PASSWORD)"
+# 3) выкатить rabbitmq
 
 # удалить пользователя, убранного из users.conf
 docker exec tf-rabbit rabbitmqctl delete_user <имя>
@@ -250,10 +276,14 @@ Erlang CLI (`rabbitmq-diagnostics`) не запускается, поэтому 
 
 ## Проверка критериев приёмки
 
-Запускать до подключения потребителя почты — тестовое сообщение идёт в `tf.notify.email`.
+Запускать при остановленном `tf-mail` (`docker stop tf-mail`, после — `docker start tf-mail`):
+tестовое сообщение идёт в `tf.notify.email`, и потребитель забрал бы его раньше проверки.
 Контейнер `tf-rabbit-smoke` при первом запуске ставит библиотеку `pika` из интернета.
 
 ```bash
+# 0. Секреты в оболочку (compose требует все переменные даже для logs)
+eval "$(../scripts/secrets.sh env rabbitmq)"
+
 # 1. Топология: список очередей и политик
 docker compose logs tf-rabbit-init
 

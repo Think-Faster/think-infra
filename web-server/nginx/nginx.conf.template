@@ -6,6 +6,23 @@ http {
 
     default_type application/octet-stream;
 
+    # DNS Docker. Адреса сервисов ищутся при запросе, а не при старте:
+    # nginx поднимается, даже если tf-front / tf-auth / tf-bff ещё не запущены
+    # (для них вернётся 502), и видит новый IP после пересоздания контейнера.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    # WebSocket (/api/funnel/stream): Connection: upgrade только для запросов с Upgrade.
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    # Частота запросов к воронке с одного адреса. У tf-funnel своих ограничений нет.
+    #   funnel_events — приём пакетов от шины (POST /api/funnel/events, до 10 000 событий в пакете);
+    #   funnel_log    — окно «Логи»: каждый запрос распаковывает архив за несколько часов.
+    limit_req_zone $binary_remote_addr zone=funnel_events:10m rate=20r/s;
+    limit_req_zone $binary_remote_addr zone=funnel_log:10m rate=5r/s;
+
 
     # ==================================================
     # HTTP
@@ -15,7 +32,8 @@ http {
 
         listen 80;
 
-        server_name ${DOMAIN};
+        # Сайт и поддомен Vault (VAULT_DOMAIN): проверка Let's Encrypt и редирект на HTTPS для всех имён.
+        server_name ${HTTP_SERVER_NAMES};
 
 
         # Let's Encrypt ACME challenge
@@ -41,7 +59,7 @@ http {
 
         listen 443 ssl;
 
-        server_name ${DOMAIN};
+        server_name ${SERVER_NAMES};
 
 
         # --------------------------------------------------
@@ -71,7 +89,13 @@ http {
 
         location /api/auth/ {
 
-            proxy_pass http://${AUTH_HOST}:${AUTH_PORT}/;
+            # Адрес в переменной — разрешается при запросе (см. resolver).
+            # С переменной proxy_pass не отрезает префикс сам, поэтому rewrite.
+            set $auth_upstream http://${AUTH_HOST}:${AUTH_PORT};
+
+            rewrite ^/api/auth/(.*)$ /$1 break;
+
+            proxy_pass $auth_upstream;
 
             proxy_http_version 1.1;
 
@@ -82,6 +106,9 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
 
         # --------------------------------------------------
@@ -94,7 +121,11 @@ http {
 
         location /api/bff/ {
 
-            proxy_pass http://${BFF_HOST}:${BFF_PORT}/;
+            set $bff_upstream http://${BFF_HOST}:${BFF_PORT};
+
+            rewrite ^/api/bff/(.*)$ /$1 break;
+
+            proxy_pass $bff_upstream;
 
             proxy_http_version 1.1;
 
@@ -105,6 +136,165 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
+        }
+
+        # --------------------------------------------------
+        # Funnel — воронка данных (tf-funnel)
+        #
+        # /api/funnel/*
+        #       ↓
+        # ${FUNNEL_HOST}:${FUNNEL_PORT}/api/funnel/*
+        #
+        # Префикс не срезается: tf-funnel отвечает и на /api/funnel/..., и без префикса.
+        # --------------------------------------------------
+
+        # Приём пакетов от шины. Пакет из 10 000 событий ~2 МБ; ответ ждёт подтверждения Kafka (до 30 с).
+        location = /api/funnel/events {
+
+            # Кому можно слать: FUNNEL_EVENTS_ALLOW в stands/<стенд>.env (пусто — всем, защита — токен).
+            ${FUNNEL_EVENTS_ACCESS}
+
+            client_max_body_size 8m;
+
+            client_body_timeout 30s;
+
+            limit_req zone=funnel_events burst=40 nodelay;
+
+            limit_req_status 429;
+
+            set $funnel_upstream http://${FUNNEL_HOST}:${FUNNEL_PORT};
+
+            proxy_pass $funnel_upstream;
+
+            proxy_http_version 1.1;
+
+            proxy_read_timeout 60s;
+
+            proxy_set_header Host $host;
+
+            proxy_set_header X-Real-IP $remote_addr;
+
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
+        }
+
+        # Живые показания для фронта: WebSocket. Сервер шлёт ping раз в 30 с,
+        # таймауты с запасом, чтобы nginx не рвал тихое соединение.
+        location = /api/funnel/stream {
+
+            set $funnel_upstream http://${FUNNEL_HOST}:${FUNNEL_PORT};
+
+            proxy_pass $funnel_upstream;
+
+            proxy_http_version 1.1;
+
+            proxy_set_header Upgrade $http_upgrade;
+
+            proxy_set_header Connection $connection_upgrade;
+
+            proxy_read_timeout 120s;
+
+            proxy_send_timeout 120s;
+
+            proxy_buffering off;
+
+            proxy_set_header Host $host;
+
+            proxy_set_header X-Real-IP $remote_addr;
+
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
+        }
+
+        # Окно «Логи»: тяжёлый запрос к архиву.
+        location = /api/funnel/log {
+
+            limit_req zone=funnel_log burst=10 nodelay;
+
+            limit_req_status 429;
+
+            set $funnel_upstream http://${FUNNEL_HOST}:${FUNNEL_PORT};
+
+            proxy_pass $funnel_upstream;
+
+            proxy_http_version 1.1;
+
+            proxy_read_timeout 60s;
+
+            proxy_set_header Host $host;
+
+            proxy_set_header X-Real-IP $remote_addr;
+
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
+        }
+
+        # Остальное: /status, /health.
+        location /api/funnel/ {
+
+            set $funnel_upstream http://${FUNNEL_HOST}:${FUNNEL_PORT};
+
+            proxy_pass $funnel_upstream;
+
+            proxy_http_version 1.1;
+
+            proxy_set_header Host $host;
+
+            proxy_set_header X-Real-IP $remote_addr;
+
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
+        }
+
+        # --------------------------------------------------
+        # Модель (tf-model, think-faster ML/service)
+        #
+        # /api/ml/*
+        #       ↓
+        # ${ML_HOST}:${ML_PORT}/api/ml/*
+        #
+        # Префикс не срезается: модель отвечает и на /api/ml/..., и без префикса. Ручки под JWT.
+        # --------------------------------------------------
+
+        location /api/ml/ {
+
+            set $ml_upstream http://${ML_HOST}:${ML_PORT};
+
+            proxy_pass $ml_upstream;
+
+            proxy_http_version 1.1;
+
+            proxy_read_timeout 60s;
+
+            proxy_set_header Host $host;
+
+            proxy_set_header X-Real-IP $remote_addr;
+
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
 
         # --------------------------------------------------
@@ -117,7 +307,9 @@ http {
 
         location / {
 
-            proxy_pass http://${FRONTEND_HOST}:${FRONTEND_PORT};
+            set $frontend_upstream http://${FRONTEND_HOST}:${FRONTEND_PORT};
+
+            proxy_pass $frontend_upstream;
 
             proxy_http_version 1.1;
 
@@ -128,6 +320,17 @@ http {
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
             proxy_set_header X-Forwarded-Proto $scheme;
+
+            # Сквозной номер запроса: сервисы пишут его в аудит (request_id) и передают дальше.
+            proxy_set_header X-Request-ID $request_id;
         }
     }
+
+
+    # ==================================================
+    # Дополнительные сайты: веб-интерфейс Vault (tf.d/vault.conf).
+    # Файлы генерирует scripts/generate-nginx-config.sh по настройкам стенда.
+    # ==================================================
+
+    include /etc/nginx/tf.d/*.conf;
 }

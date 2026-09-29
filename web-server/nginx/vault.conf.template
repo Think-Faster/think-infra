@@ -1,0 +1,73 @@
+# ==================================================
+# Веб-интерфейс и API Vault: https://${VAULT_DOMAIN}
+#
+# Генерирует scripts/generate-nginx-config.sh, если в stands/<стенд>.env задан VAULT_DOMAIN.
+# Vault сам не перезапускается и не меняется: nginx ходит к нему по сети think-fast-net
+# (http://vault:8200), TLS снимает nginx. Вход — по токену Vault (личный токен tf-admin).
+# ==================================================
+
+# Подбор учёток AppRole / userpass: не больше 30 попыток входа в минуту с одного адреса.
+limit_req_zone $binary_remote_addr zone=vault_login:10m rate=30r/m;
+
+server {
+
+    listen 443 ssl;
+
+    server_name ${VAULT_DOMAIN};
+
+
+    # Сертификат общий с сайтом: VAULT_DOMAIN добавлен в него выкаткой web-server.
+    ssl_certificate
+        /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+
+    ssl_certificate_key
+        /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+
+    # Кому открыт доступ: VAULT_ALLOW в stands/<стенд>.env (пусто — всем, защита — токен Vault).
+    ${VAULT_ACCESS}
+
+    client_max_body_size 1m;
+
+
+    location ~ ^/v1/auth/.+/login {
+
+        limit_req zone=vault_login burst=10 nodelay;
+
+        limit_req_status 429;
+
+        set $vault_upstream http://vault:8200;
+
+        proxy_pass $vault_upstream;
+
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+
+        proxy_set_header X-Real-IP $remote_addr;
+
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+
+    location / {
+
+        set $vault_upstream http://vault:8200;
+
+        proxy_pass $vault_upstream;
+
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+
+        proxy_set_header X-Real-IP $remote_addr;
+
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

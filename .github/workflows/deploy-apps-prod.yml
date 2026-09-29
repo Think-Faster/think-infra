@@ -1,0 +1,179 @@
+# Выкатка prod с раннера prod: инфраструктура, tf-auth, tf-bff и tf-audit — без SSH-ключа в GitHub.
+# tf-funnel и tf-model на prod выкатывает сам Think-Faster (deploy-funnel-prod.yml, deploy-model-prod.yml,
+# свои пары FUNNEL_/MODEL_VAULT_*): второй путь с другими параметрами здесь не держим.
+#
+# Код tf-auth и tf-bff лежит на сервере в /srv/thinkfaster/services/<репо> (git archive ветки prod
+# репозитория сервиса; тот же каталог использует deploy-prod.yml в think-auth / think-bff).
+# Образ tf-audit:prod собирается на сервере
+# скриптом /srv/thinkfaster/services/think-faster/build.sh (код из Think-Faster).
+# tf-audit в шаги по умолчанию не входит: нужна схема audit (schemas.conf + пароли в secrets.conf).
+#
+# Доступ к Vault — секреты Environment prod этого репозитория:
+#   VAULT_TOKEN   токен администратора (root) — нужен для setup.sh apply и для выдачи пар сервисам;
+#                 без него сработает только то, для чего пары уже заданы ниже;
+#   TF_AUTH_VAULT_ROLE_ID / TF_AUTH_VAULT_SECRET_ID  пара роли tf-svc-tf-auth (необязательно);
+#   TF_BFF_VAULT_ROLE_ID  / TF_BFF_VAULT_SECRET_ID   пара роли tf-svc-tf-bff  (необязательно);
+#   так же TF_AUDIT_* для tf-svc-tf-audit.
+# Если пары сервиса нет, она выдаётся на лету из VAULT_TOKEN (как setup.sh service-credentials),
+# маскируется и уходит только в окружение контейнера — в журнал и на диск не пишется.
+#
+# Шаги идут по порядку, упавший не останавливает следующие; итог — таблица в конце и код выхода.
+name: deploy prod (infra + apps)
+
+on:
+  push:
+    branches: [prod]
+    paths:
+      - .github/workflows/deploy-apps-prod.yml
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: Что выкатывать, по порядку
+        default: apply secrets postgree redis rabbitmq kafka auth bff mailing telegram
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-apps-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref_name == 'prod'
+    runs-on: [self-hosted, prod]
+    environment: prod
+    timeout-minutes: 90
+    env:
+      TF_STAND: prod
+      STEPS: ${{ github.event.inputs.steps || 'apply secrets postgree redis rabbitmq kafka auth bff mailing telegram' }}
+      SERVICES_DIR: /srv/thinkfaster/services
+      VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+      TF_AUTH_VAULT_ROLE_ID: ${{ secrets.TF_AUTH_VAULT_ROLE_ID }}
+      TF_AUTH_VAULT_SECRET_ID: ${{ secrets.TF_AUTH_VAULT_SECRET_ID }}
+      TF_BFF_VAULT_ROLE_ID: ${{ secrets.TF_BFF_VAULT_ROLE_ID }}
+      TF_BFF_VAULT_SECRET_ID: ${{ secrets.TF_BFF_VAULT_SECRET_ID }}
+      TF_AUDIT_VAULT_ROLE_ID: ${{ secrets.TF_AUDIT_VAULT_ROLE_ID }}
+      TF_AUDIT_VAULT_SECRET_ID: ${{ secrets.TF_AUDIT_VAULT_SECRET_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy
+        shell: bash
+        run: |
+          set +e -uo pipefail   # шаги независимы: упавший не прерывает остальные
+          LOG_TAG="PROD"
+          source scripts/lib/vault.sh
+          vault_require_unsealed
+
+          # Пара AppRole сервиса: из секретов окружения или новая из VAULT_TOKEN.
+          pair() {
+            local prefix="$1" role="$2" rid sid
+            rid="$(printenv "${prefix}_VAULT_ROLE_ID" || true)"
+            sid="$(printenv "${prefix}_VAULT_SECRET_ID" || true)"
+            if [ -z "$rid" ] || [ -z "$sid" ]; then
+              [ -n "${VAULT_TOKEN:-}" ] || { log "нет ${prefix}_VAULT_ROLE_ID/SECRET_ID и VAULT_TOKEN"; return 1; }
+              rid="$(vault_cmd read -field=role_id "auth/approle/role/$role/role-id")" || return 1
+              echo "::add-mask::$rid"
+              sid="$(vault_cmd write -f -field=secret_id "auth/approle/role/$role/secret-id")" || return 1
+              log "$role: выдан новый secret_id"
+            fi
+            echo "::add-mask::$rid"
+            echo "::add-mask::$sid"
+            export VAULT_ROLE_ID="$rid" VAULT_SECRET_ID="$sid"
+          }
+
+          step_apply() {
+            [ -n "${VAULT_TOKEN:-}" ] || { log "VAULT_TOKEN не задан — apply пропущен"; return 0; }
+            bash hashicorp/scripts/setup.sh apply
+          }
+
+          # Недостающие секреты из secrets.conf (пароли kafka/rabbit новых сервисов и т.п.) — генерация.
+          step_secrets() {
+            [ -n "${VAULT_TOKEN:-}" ] || { log "VAULT_TOKEN не задан — secrets init пропущен"; return 0; }
+            bash scripts/secrets.sh init < /dev/null
+          }
+
+          # Сервис Think-Faster из готового образа <имя>:prod — как в deploy-*-dev.yml Think-Faster.
+          step_container() {
+            local name="$1" prefix="$2" mem="$3"; shift 3
+            ( set -e
+              docker image inspect "$name:prod" > /dev/null \
+                || { log "нет образа $name:prod — /srv/thinkfaster/services/think-faster/build.sh"; exit 1; }
+              pair "$prefix" "tf-svc-$name"
+              docker rm -f "$name" > /dev/null 2>&1 || true
+              docker run -d --name "$name" --network think-fast-net --restart unless-stopped \
+                --memory "$mem" \
+                -e TF_ENV=prod -e VAULT_ADDR=http://vault:8200 -e TF_VAULT_WAIT=900 \
+                -e TF_REDIS_URL=redis://tf-redis:6379/0 \
+                -e TF_AUTH_JWKS=http://tf-auth:8080/.well-known/jwks \
+                -e VAULT_ROLE_ID -e VAULT_SECRET_ID \
+                "$@" "$name:prod" > /dev/null
+              sleep 30
+              docker ps -a --filter "name=^$name\$" --format '{{.Names}} {{.Status}}'
+              docker logs --tail 40 "$name" )
+          }
+
+          step_infra() {
+            ( unset VAULT_ROLE_ID VAULT_SECRET_ID; bash scripts/deploy.sh "$1" )
+          }
+
+          step_auth() {
+            ( set -e
+              pair TF_AUTH tf-svc-tf-auth
+              cd "$SERVICES_DIR/think-auth/deploy"
+              [ -f .env ] || cp .env.example .env
+              docker compose build
+              docker compose up -d
+              sleep 30
+              docker compose ps
+              docker compose logs --tail=40 )
+          }
+
+          step_bff() {
+            ( set -e
+              pair TF_BFF tf-svc-tf-bff
+              cd "$SERVICES_DIR/think-bff/BFF/deploy"
+              # Настройки prod (не секреты) — как в deploy-prod.yml think-bff
+              if [ ! -f .env ]; then
+                sed -e 's#^AUTH_SERVICE_URL=.*#AUTH_SERVICE_URL=http://tf-auth:8080#' \
+                    -e 's#^AUTH_REFRESH_PATH=.*#AUTH_REFRESH_PATH=/refresh#' \
+                    -e 's#^AUTH_JWKS_URL=.*#AUTH_JWKS_URL=http://tf-auth:8080/.well-known/jwks#' \
+                    -e 's#^AUTH_ISSUER=.*#AUTH_ISSUER=auth-service#' \
+                    -e 's#^AUTH_AUDIENCE=.*#AUTH_AUDIENCE=api#' \
+                    -e 's#^CORS_ALLOWED_ORIGINS=.*#CORS_ALLOWED_ORIGINS=https://thinkfaster.ru,https://www.thinkfaster.ru#' \
+                    .env.example > .env
+              fi
+              [ -f migration/.env ] || cp migration/.env.example migration/.env
+              ( cd migration \
+                && docker compose -f docker-compose.migrations.yml --profile migrations build \
+                && docker compose -f docker-compose.migrations.yml --profile migrations up \
+                     --abort-on-container-exit --exit-code-from bff-migrations \
+                && docker compose -f docker-compose.migrations.yml --profile migrations down )
+              docker compose build
+              docker compose up -d
+              sleep 30
+              docker compose ps
+              docker compose logs --tail=40 )
+          }
+
+          summary=""; failed=0
+          for s in $STEPS; do
+            echo "::group::$s"
+            case "$s" in
+              apply) step_apply ;;
+              auth)  step_auth ;;
+              bff)   step_bff ;;
+              secrets) step_secrets ;;
+              audit)  step_container tf-audit TF_AUDIT 256m \
+                        -e "TF_AUDIT_DB=host=tf-postgres dbname=tf user=audit_user" ;;
+              *)     step_infra "$s" ;;
+            esac
+            rc=$?
+            echo "::endgroup::"
+            if [ "$rc" -eq 0 ]; then summary+="$s ok"$'\n'; else summary+="$s FAILED ($rc)"$'\n'; failed=1; fi
+          done
+
+          echo "== итог"; printf '%s' "$summary"
+          docker ps -a --format '{{.Names}}\t{{.Status}}' | grep '^tf-\|^vault' || true
+          exit "$failed"
