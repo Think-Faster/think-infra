@@ -27,12 +27,14 @@ th:first-child, td:first-child { word-break: normal; overflow-wrap: normal; hyph
 blockquote { margin: 8px 0; padding: 4px 12px; border-left: 4px solid var(--line); color: var(--muted); }
 .mermaid { text-align: center; background: #fff; border: 1px solid var(--line); border-radius: 5px;
            padding: 8px; margin: 10px 0; page-break-inside: avoid; break-inside: avoid; white-space: normal; }
-.mermaid svg { max-width: 100% !important; height: auto; }
+/* Высокая схема не должна переходить через страницу: Chrome не рисует SVG, разрезанный разрывом.
+   Ограничение по высоте печатной области, пропорции сохраняет viewBox. */
+.mermaid svg { max-width: 100% !important; max-height: 225mm; height: auto; }
 .mermaid-error { border-color: #cf222e; color: #cf222e; white-space: pre-wrap; text-align: left; }
 .toc ul, .toc ol { margin: 0; }
 </style><meta name="mermaid-status" content="done 24 failed 0"></head><body><h1 id="think-faster--системная-документация">Think Faster — системная документация</h1>
 <p>Версия документа: <strong>2026-09-29</strong>. Собран из разделов сервисов и частей инфраструктуры скриптом
-<code>docs/system/build.py</code> (think-infra, ветка <code>TF-Infra-Docs@1d7ee3f</code>).</p>
+<code>docs/system/build.py</code> (think-infra, ветка <code>TF-Infra-Docs@799dc53</code>).</p>
 <table>
 <thead>
 <tr>
@@ -45,7 +47,7 @@ blockquote { margin: 8px 0; padding: 4px 12px; border-left: 4px solid var(--line
 <tr>
 <td>I–II, IV–IX, приложения</td>
 <td>think-infra</td>
-<td><code>TF-Infra-Docs@1d7ee3f</code></td>
+<td><code>TF-Infra-Docs@799dc53</code></td>
 </tr>
 <tr>
 <td>Часть III — tf-auth</td>

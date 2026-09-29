@@ -167,7 +167,9 @@ th:first-child, td:first-child { word-break: normal; overflow-wrap: normal; hyph
 blockquote { margin: 8px 0; padding: 4px 12px; border-left: 4px solid var(--line); color: var(--muted); }
 .mermaid { text-align: center; background: #fff; border: 1px solid var(--line); border-radius: 5px;
            padding: 8px; margin: 10px 0; page-break-inside: avoid; break-inside: avoid; white-space: normal; }
-.mermaid svg { max-width: 100% !important; height: auto; }
+/* Высокая схема не должна переходить через страницу: Chrome не рисует SVG, разрезанный разрывом.
+   Ограничение по высоте печатной области, пропорции сохраняет viewBox. */
+.mermaid svg { max-width: 100% !important; max-height: 225mm; height: auto; }
 .mermaid-error { border-color: #cf222e; color: #cf222e; white-space: pre-wrap; text-align: left; }
 .toc ul, .toc ol { margin: 0; }
 """

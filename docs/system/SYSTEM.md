@@ -1,11 +1,11 @@
 # Think Faster — системная документация
 
 Версия документа: **2026-09-29**. Собран из разделов сервисов и частей инфраструктуры скриптом
-`docs/system/build.py` (think-infra, ветка `TF-Infra-Docs@1d7ee3f`).
+`docs/system/build.py` (think-infra, ветка `TF-Infra-Docs@799dc53`).
 
 | Часть | Источник | Версия |
 |---|---|---|
-| I–II, IV–IX, приложения | think-infra | `TF-Infra-Docs@1d7ee3f` |
+| I–II, IV–IX, приложения | think-infra | `TF-Infra-Docs@799dc53` |
 | Часть III — tf-auth | think-auth | `TF-Auth-Docs@6947f44` |
 | Часть III — tf-bff | think-bff | `dev@3dc8875` |
 | Часть III — tf-front | think-front | `TF-Front-Docs@46e013e` |
