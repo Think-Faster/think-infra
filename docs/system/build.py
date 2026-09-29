@@ -163,10 +163,13 @@ tr { page-break-inside: avoid; break-inside: avoid; }
 th, td { border: 1px solid var(--line); padding: 3px 6px; vertical-align: top; text-align: left;
          word-break: break-word; }
 th { background: var(--bg2); }
+th:first-child, td:first-child { word-break: normal; overflow-wrap: normal; hyphens: auto; }
 blockquote { margin: 8px 0; padding: 4px 12px; border-left: 4px solid var(--line); color: var(--muted); }
 .mermaid { text-align: center; background: #fff; border: 1px solid var(--line); border-radius: 5px;
            padding: 8px; margin: 10px 0; page-break-inside: avoid; break-inside: avoid; white-space: normal; }
-.mermaid svg { max-width: 100% !important; height: auto; }
+/* Высокая схема не должна переходить через страницу: Chrome не рисует SVG, разрезанный разрывом.
+   Ограничение по высоте печатной области, пропорции сохраняет viewBox. */
+.mermaid svg { max-width: 100% !important; max-height: 225mm; height: auto; }
 .mermaid-error { border-color: #cf222e; color: #cf222e; white-space: pre-wrap; text-align: left; }
 .toc ul, .toc ol { margin: 0; }
 """
@@ -238,7 +241,7 @@ def for_python_markdown(text: str) -> str:
     return '\n'.join(out)
 
 
-def to_html(md_text: str) -> str:
+def to_html(md_text: str, title: str = 'Think Faster — системная документация') -> str:
     import markdown
     md_text = for_python_markdown(md_text)
     blocks = []
@@ -254,7 +257,7 @@ def to_html(md_text: str) -> str:
     for i, src in enumerate(blocks):
         body = body.replace(f'<p>MERMAIDBLOCK{i}</p>', f'<pre class="mermaid">{html.escape(src)}</pre>')
     return ('<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8">'
-            '<title>Think Faster — системная документация</title>'
+            f'<title>{html.escape(title)}</title>'
             f'<style>{CSS}</style></head><body>{body}{MERMAID_JS}</body></html>')
 
 
