@@ -6,38 +6,38 @@
 
 ## 4.1. Приём и первичная обработка потока
 
-Метод реализован в tf-funnel: [Think-Faster: docs/backend/funnel/](https://github.com/GroznyiBombila/Think-Faster/tree/main/docs/backend/funnel).
+Метод реализован в tf-funnel: [Think-Faster: docs/backend/funnel/](https://github.com/Think-Faster/Think-Faster/tree/main/docs/backend/funnel).
 
 | Шаг | Метод | Код |
 |---|---|---|
-| Приём | `POST /api/funnel/events`: пакет до 10 000 событий, JWT шины | [http.go](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/funnel/http.go) |
-| Проверка события | обязательны канал, дата, время, значение; значение — строка ≤ 255; число нормализуется | [parse.go](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/funnel/parse.go) |
-| Раскладка | не тревожное число → `tf.ingest.readings`; тревога или текст → `tf.ingest.journal`; ключ Kafka — номер канала (порядок по каналу) | [funnel.go](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/funnel/funnel.go) |
+| Приём | `POST /api/funnel/events`: пакет до 10 000 событий, JWT шины | [http.go](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/funnel/http.go) |
+| Проверка события | обязательны канал, дата, время, значение; значение — строка ≤ 255; число нормализуется | [parse.go](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/funnel/parse.go) |
+| Раскладка | не тревожное число → `tf.ingest.readings`; тревога или текст → `tf.ingest.journal`; ключ Kafka — номер канала (порядок по каналу) | [funnel.go](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/funnel/funnel.go) |
 | Подтверждение | пакет засчитывается после `acks=all`, иначе `503` + `Retry-After: 5` | там же |
-| Молчание каналов | канал, который слышали ≥ 3 раз, «молчит», если тишина > max(`TF_FUNNEL_SILENT_MIN`, 4 × сглаженный интервал); переходы → `channel.status` в `tf.ingest.reference` | [channels.go](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/funnel/channels.go) |
-| Архив | JSONL по часу приёма, закрытые часы сжимаются zstd, срок `TF_FUNNEL_ARCHIVE_DAYS` | [archive.go](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/funnel/archive.go) |
-| История и живой поток | `GET /api/funnel/log`, `WSS /api/funnel/stream`; права — по BFF `GET /readings/scope` | [stream.go](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/funnel/stream.go) |
+| Молчание каналов | канал, который слышали ≥ 3 раз, «молчит», если тишина > max(`TF_FUNNEL_SILENT_MIN`, 4 × сглаженный интервал); переходы → `channel.status` в `tf.ingest.reference` | [channels.go](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/funnel/channels.go) |
+| Архив | JSONL по часу приёма, закрытые часы сжимаются zstd, срок `TF_FUNNEL_ARCHIVE_DAYS` | [archive.go](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/funnel/archive.go) |
+| История и живой поток | `GET /api/funnel/log`, `WSS /api/funnel/stream`; права — по BFF `GET /readings/scope` | [stream.go](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/funnel/stream.go) |
 
 Формат пакета и сообщений Kafka — [SYSTEM.md, tf-funnel §4](../system/SYSTEM.md).
 
 ## 4.2. Методы модели
 
-Подробно, с числами и разделами журнала исследования, — [Think-Faster: docs/документация.md §4–§5](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/документация.md)
-и [ML/SPEC.md](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/SPEC.md). Кратко:
+Подробно, с числами и разделами журнала исследования, — [Think-Faster: docs/документация.md §4–§5](https://github.com/Think-Faster/Think-Faster/blob/main/docs/документация.md)
+и [ML/SPEC.md](https://github.com/Think-Faster/Think-Faster/blob/main/ML/SPEC.md). Кратко:
 
 | Метод | Суть | Код |
 |---|---|---|
-| Чистка | дубли «канал + время + значение», служебные даты охраны, каналы вне справочника, разделение чисел и состояний, исключение 2021 года | [ML/pipeline/events.py](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/pipeline/events.py) |
-| Разметка | эпизод — сработки одного типа на объекте с паузой ≤ 1 ч; шум (массовый дым, «Затоплен» после питания, газ в окне ППР) размечается отдельно; проникновение — дверь + движение под охраной | [labels.py](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/pipeline/labels.py) |
-| Признаки | 306 признаков «объект × час»: счётчики за 1 ч – 7 сут, газ и температура, история эпизодов, выезды, календарь, состав объекта; без заглядывания в будущее (проверка `check.py`) | [features.py](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/pipeline/features.py) |
-| Модели | своя модель на тип, 5 зёрен: CatBoost, XGBoost; у отказа оборудования — смесь CatBoost 0,75 + TCN 0,25 | [ML/service/core.py](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/service/core.py), [pipeline/seqmodel.py](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/pipeline/seqmodel.py) |
-| Порог | скользящая доля часов под тревогой по типу: квантиль оценок парка за 90 суток | [ML/settings/operating.md](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/settings/operating.md) |
-| Правила после модели | склейка повторов 6 ч; правило отклонения у газа и подтопления; молчание в окне графика работ | [ML/service/core.py](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/service/core.py) |
-| Канал «по факту» | объявление эпизода на 10-й минуте по пришедшим событиям с отсевом шума; аварии и «слепота» объекта | [ML/INTEGRATION.md §13.11](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/INTEGRATION.md) |
-| Уверенность | изотоническая калибровка оценки на проверке 2025; снижается за молчащие семейства датчиков | [документация.md §4.11](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/документация.md) |
+| Чистка | дубли «канал + время + значение», служебные даты охраны, каналы вне справочника, разделение чисел и состояний, исключение 2021 года | [ML/pipeline/events.py](https://github.com/Think-Faster/Think-Faster/blob/main/ML/pipeline/events.py) |
+| Разметка | эпизод — сработки одного типа на объекте с паузой ≤ 1 ч; шум (массовый дым, «Затоплен» после питания, газ в окне ППР) размечается отдельно; проникновение — дверь + движение под охраной | [labels.py](https://github.com/Think-Faster/Think-Faster/blob/main/ML/pipeline/labels.py) |
+| Признаки | 306 признаков «объект × час»: счётчики за 1 ч – 7 сут, газ и температура, история эпизодов, выезды, календарь, состав объекта; без заглядывания в будущее (проверка `check.py`) | [features.py](https://github.com/Think-Faster/Think-Faster/blob/main/ML/pipeline/features.py) |
+| Модели | своя модель на тип, 5 зёрен: CatBoost, XGBoost; у отказа оборудования — смесь CatBoost 0,75 + TCN 0,25 | [ML/service/core.py](https://github.com/Think-Faster/Think-Faster/blob/main/ML/service/core.py), [pipeline/seqmodel.py](https://github.com/Think-Faster/Think-Faster/blob/main/ML/pipeline/seqmodel.py) |
+| Порог | скользящая доля часов под тревогой по типу: квантиль оценок парка за 90 суток | [ML/settings/operating.md](https://github.com/Think-Faster/Think-Faster/blob/main/ML/settings/operating.md) |
+| Правила после модели | склейка повторов 6 ч; правило отклонения у газа и подтопления; молчание в окне графика работ | [ML/service/core.py](https://github.com/Think-Faster/Think-Faster/blob/main/ML/service/core.py) |
+| Канал «по факту» | объявление эпизода на 10-й минуте по пришедшим событиям с отсевом шума; аварии и «слепота» объекта | [ML/INTEGRATION.md §13.11](https://github.com/Think-Faster/Think-Faster/blob/main/ML/INTEGRATION.md) |
+| Уверенность | изотоническая калибровка оценки на проверке 2025; снижается за молчащие семейства датчиков | [документация.md §4.11](https://github.com/Think-Faster/Think-Faster/blob/main/docs/документация.md) |
 | Основания и свидетели | 3 главных признака (`reasons`), до 5 последних событий каналов типа (`evidence`) | формат — [SYSTEM.md, tf-model §4.2](../system/SYSTEM.md) |
-| Рекомендации | словарь из 70 правил, режимы «прогноз» (за 24 ч) и «по факту» (за 4 ч), кого посылать | [analytics.md §61](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/results/analytics.md) |
-| Такт | раз в час: граница часа МСК + 120 с, признаки всего парка ≈ 3 с | [ML/service/clock.py](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/service/clock.py) |
+| Рекомендации | словарь из 70 правил, режимы «прогноз» (за 24 ч) и «по факту» (за 4 ч), кого посылать | [analytics.md §61](https://github.com/Think-Faster/Think-Faster/blob/main/ML/results/analytics.md) |
+| Такт | раз в час: граница часа МСК + 120 с, признаки всего парка ≈ 3 с | [ML/service/clock.py](https://github.com/Think-Faster/Think-Faster/blob/main/ML/service/clock.py) |
 
 ## 4.3. Журнал аудита администратора
 
@@ -61,9 +61,9 @@ flowchart LR
 |---|---|---|
 | tf-auth | `login.success`, `login.failure`, `account.locked`, `token.refreshed`, `user.created`, `access.denied` | [AuditWriter.cs](https://github.com/Think-Faster/think-auth/blob/prod/AuthService/WebAPI/Services/Audit/AuditWriter.cs) |
 | tf-bff | изменения по белому списку маршрутов (заявки, решения, права, группы, пользователи) и `access.denied` на каждый `403` | [AuditMiddleware.cs](https://github.com/Think-Faster/think-bff/blob/prod/BFF/src/BFF.WebApi/Audit/AuditMiddleware.cs) |
-| tf-funnel | `token.refused`, `access.denied`, `telemetry.rejected`; журнал запросов | [kit.go](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/funnel/kit.go) |
-| tf-model | решения и настройки (раздел 4.4), `token.refused`, `access.denied`; журнал запросов | [ML/service/core.py](https://github.com/GroznyiBombila/Think-Faster/blob/main/ML/service/core.py) |
-| tf-audit | запись в базу, вырезание запрещённых полей (`password`, `token`, `cookie`, `authorization`, `text`, `body`) | [audit.py](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/audit/audit.py), [schema.sql](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/audit/schema.sql) |
+| tf-funnel | `token.refused`, `access.denied`, `telemetry.rejected`; журнал запросов | [kit.go](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/funnel/kit.go) |
+| tf-model | решения и настройки (раздел 4.4), `token.refused`, `access.denied`; журнал запросов | [ML/service/core.py](https://github.com/Think-Faster/Think-Faster/blob/main/ML/service/core.py) |
+| tf-audit | запись в базу, вырезание запрещённых полей (`password`, `token`, `cookie`, `authorization`, `text`, `body`) | [audit.py](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/audit/audit.py), [schema.sql](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/audit/schema.sql) |
 
 Формат события — [SYSTEM.md, tf-audit §4.1](../system/SYSTEM.md): кто (`actor_kind`, `actor_id`,
 `actor_login`), что (`event_type`, `outcome`), над чем (`object_type`, `object_id`), сквозной
@@ -76,7 +76,7 @@ flowchart LR
 | SQL | администратор БД | `select occurred_at, service, event_type, outcome, actor_login, object_type, object_id, details from audit.events where occurred_at > now() - interval '1 day' order by occurred_at desc;` |
 | API | техучётка с правом `audit.read` | `GET http://tf-audit:8000/events?event_type=access.&since=…` — фильтры по типу (или префиксу), сервису, объекту, исполнителю, `request_id`, исходу, периоду |
 | Поток Redis (до базы) | администратор инфраструктуры | `docker exec tf-redis sh -c 'REDISCLI_AUTH="$TF_REDIS_PASSWORD" redis-cli XREVRANGE audit + - COUNT 20'` |
-| Сводка dev | разработчик | workflow `Dev status` в Think-Faster: число событий, типы, читает ли их tf-audit ([dev-status.yml](https://github.com/GroznyiBombila/Think-Faster/blob/main/.github/workflows/dev-status.yml)) |
+| Сводка dev | разработчик | workflow `Dev status` в Think-Faster: число событий, типы, читает ли их tf-audit ([dev-status.yml](https://github.com/Think-Faster/Think-Faster/blob/main/.github/workflows/dev-status.yml)) |
 | Прослеживание цепочки | администратор | по `request_id` одной строки найти все события этого запроса во всех сервисах |
 
 **Защита.** Правка и удаление строк запрещены триггерами базы для всех, включая владельца. Журнал
@@ -91,7 +91,7 @@ flowchart LR
 
 **Назначение.** Главный диспетчер видит, какие прогнозы отклонены или заглушены, кем и почему, и
 какие из них всё-таки переросли в происшествие. Замысел —
-[домены-и-сущности.md §10.1](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/домены-и-сущности.md), [документация.md §6.6](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/документация.md).
+[домены-и-сущности.md §10.1](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/домены-и-сущности.md), [документация.md §6.6](https://github.com/Think-Faster/Think-Faster/blob/main/docs/документация.md).
 
 **Статусы прогноза в BFF** ([PredictionStatus.cs](https://github.com/Think-Faster/think-bff/blob/prod/BFF/src/BFF.Models/Enums/PredictionStatus.cs)):
 `New`, `InReview`, `Taken`, `Rejected`, `Muted`, `Closed`.
@@ -117,7 +117,7 @@ where service = 'ml' and event_type = 'forecast.recurred'
 order by occurred_at desc;
 ```
 
-**Правила учёта** ([документация.md §6.6](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/документация.md)):
+**Правила учёта** ([документация.md §6.6](https://github.com/Think-Faster/Think-Faster/blob/main/docs/документация.md)):
 - исход «случилось» определяется по подтверждённым происшествиям, а не по журналу датчиков;
 - молчание по графику работ идёт отдельной строкой без дежурного диспетчера;
 - диспетчеров сравнивают только внутри одной версии модели.
@@ -141,7 +141,7 @@ order by occurred_at desc;
 | Датчики | молчит ли канал | воронка → Kafka | `channel.status silent/ok` → модель: у типа `silent`, уверенность снижена |
 | Свежесть модели | не устарели ли данные | модель | `stale_hours` у типа, если событий семейств нет дольше порога (1 ч; подтопление 3 ч; проникновение 12 ч) |
 | Очереди | нет ли застрявших сообщений | RabbitMQ, Kafka | `tf.dlq`, лаг групп — [SYSTEM.md 5.3](../system/SYSTEM.md) |
-| Стенд целиком | всё ли поднято | workflow `Dev status`, ручной обход | [dev-status.yml](https://github.com/GroznyiBombila/Think-Faster/blob/main/.github/workflows/dev-status.yml), [SYSTEM.md 5.1](../system/SYSTEM.md) |
+| Стенд целиком | всё ли поднято | workflow `Dev status`, ручной обход | [dev-status.yml](https://github.com/Think-Faster/Think-Faster/blob/main/.github/workflows/dev-status.yml), [SYSTEM.md 5.1](../system/SYSTEM.md) |
 
 **Возможности.** Docker перезапускает упавший контейнер (`restart: unless-stopped`). Выкатка
 инфраструктуры ждёт `healthy` (`compose up --wait`). nginx отвечает `502`, пока сервис не поднялся, и
@@ -221,7 +221,7 @@ healthcheck tf-bff в compose закомментирован ([SYSTEM.md VII-20]
 
 **Игнорируемые периоды.** Закрывают случаи, когда данные испорчены: параллельная работа двух систем
 мониторинга (как в 2021 году), потеря данных, сбой шлюза. Эти часы не портят порог и признаки, а при
-переобучении не попадают в обучение ([домены-и-сущности.md §10.4](https://github.com/GroznyiBombila/Think-Faster/blob/main/docs/backend/домены-и-сущности.md)).
+переобучении не попадают в обучение ([домены-и-сущности.md §10.4](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/домены-и-сущности.md)).
 Задаются по парку; для периодов по объекту и каналу в BFF есть таблица `ignored_ranges` (`scope` ∈
 `ALL`, `OBJECT`, `SENSOR`), но в модель сейчас уходят только периоды по парку.
 

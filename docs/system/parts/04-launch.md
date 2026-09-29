@@ -153,7 +153,7 @@ read -rs -p "ROOT: " VAULT_TOKEN; echo; export VAULT_TOKEN
 
 1. Пароль: `scripts/secrets.sh get POSTGRES_PASSWORD` (или `TF_PG_<СХЕМА>_USER_PASSWORD`) под личным токеном.
    На prod для повседневной работы берите пользователя схемы, а не суперпользователя `tf`.
-2. dev: `176.123.167.161:5432`, база `tf`.
+2. dev: адрес dev-сервера (выдаёт администратор стенда), порт `5432`, база `tf`.
 3. prod: SSH-туннель. В pgAdmin на вкладке SSH Tunnel: host `45.87.41.186`, port 22, свой пользователь,
    Authentication — Identity file (закрытый ключ, **без** `.pub`), Password — пароль от ключа, если он есть.
    На вкладке Connection: `127.0.0.1:15432`, база `tf`.
