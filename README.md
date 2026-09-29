@@ -1,3 +1,84 @@
+# think-infra
+
+Инфраструктура стенда Think-Faster и документация проекта для экспертов. Здесь описано и
+выкатывается всё, на чём работают сервисы: хранилище секретов, база, брокеры, веб-сервер, почта и
+Telegram. Стенд поднимается с нуля одной командой, пароли живут только в Vault.
+
+## Документация для экспертов
+
+| Раздел | Что внутри |
+|---|---|
+| [docs/project](docs/project) | документация по пунктам экспертизы, у каждого файла есть PDF: [вход](docs/project/01-auth.md), [архитектура и стек](docs/project/02-architecture.md), [решения, в том числе отброшенные](docs/project/03-decisions.md), [методы](docs/project/04-methods.md), [соответствие ТЗ](docs/project/05-tz-compliance.md), [развёртывание своими силами](docs/project/06-deploy.md), [обзор простым языком](docs/project/08-overview.md) |
+| [docs/system](docs/system) | описание системы целиком и по сервисам: [SYSTEM.md](docs/system/SYSTEM.md), части и карточки сервисов |
+| [QUICK_START.md](QUICK_START.md) | пошаговый подъём своего стенда без предварительных знаний |
+
+## Что где лежит
+
+| Папка | Что внутри |
+|---|---|
+| [hashicorp](hashicorp) | Vault: хранилище секретов, политики и AppRole сервисов |
+| [postgree](postgree) | PostgreSQL и схемы сервисов с раздельными ролями для миграций и приложения |
+| [kafka](kafka) | Kafka: поток событий и прогнозов |
+| [rabbitmq](rabbitmq) | RabbitMQ: команды модели и уведомления |
+| [redis](redis) | Redis: поток аудита, защита уведомлений от повтора |
+| [web-server](web-server) | nginx и Let's Encrypt — единая точка входа |
+| [mailing](mailing) | `tf-mail` — письма из очереди через SMTP |
+| [telegram](telegram) | `tf-tg` — сообщения бота Telegram из очереди |
+| [samba](samba) | Samba AD для входа через корпоративный каталог (в выкатку не входит) |
+| [stands](stands) | несекретные настройки стендов, по файлу на стенд |
+| [scripts](scripts) | [bootstrap-stand.sh](scripts/bootstrap-stand.sh) — подъём стенда, [deploy.sh](scripts/deploy.sh) — выкатка сервиса, [secrets.sh](scripts/secrets.sh) — генерация и ротация секретов |
+| [secrets.conf](secrets.conf) | список секретов: сервис, путь в Vault, имя переменной, способ генерации (без значений) |
+| [docs](docs) | документация проекта, ТЗ на встраивание сервисов в стенд: Vault, приём данных, уведомления |
+| [.github/workflows](.github/workflows) | выкатка: пуш в `prod` выкатывает изменённые сервисы на [thinkfaster.ru](https://thinkfaster.ru) |
+
+Ниже — подробное описание инфраструктуры: сервисы, секреты, схемы базы, выкатка и настройка GitHub.
+
+## Проект целиком
+
+Think-Faster — сервис прогнозирования инцидентов в инженерных коллекторах (ЛЦТ-2026). Раз в час он
+оценивает 78 объектов по журналу событий системы мониторинга и за сутки предупреждает о шести типах
+происшествий: пожар, загазованность, подтопление, отказ оборудования, отказ датчика, проникновение.
+К тревоге прилагаются основания и рекомендация: что сделать, в какой срок, кого послать. Решение
+принимает диспетчер, сервис ничем на объекте не управляет.
+
+| Что | Где |
+|---|---|
+| Прототип | [thinkfaster.ru](https://thinkfaster.ru) |
+| Документация для экспертов: вход, архитектура, решения, методы, соответствие ТЗ, развёртывание, обзор | [think-infra/docs/project](https://github.com/Think-Faster/think-infra/tree/dev/docs/project) |
+| Описание системы по сервисам | [think-infra/docs/system](https://github.com/Think-Faster/think-infra/tree/dev/docs/system) |
+| Сопроводительная документация по ГОСТ 34.602, модель и исследование | [Think-Faster/docs/документация.md](https://github.com/Think-Faster/Think-Faster/blob/main/docs/документация.md) |
+
+| Репозиторий | Что это | Стек |
+|---|---|---|
+| [Think-Faster](https://github.com/Think-Faster/Think-Faster) | модель прогноза, приём данных, уведомления, аудит; исследование, датасет, документация | Python, FastAPI, CatBoost, XGBoost, PyTorch; Go |
+| [think-front](https://github.com/Think-Faster/think-front) | веб-интерфейс: диспетчер, главный диспетчер, инженер, администратор | React 19, TypeScript, Zustand |
+| [think-bff](https://github.com/Think-Faster/think-bff) | API для интерфейса: права, группы, объекты, заявки, прогнозы, настройки модели | .NET 8, ASP.NET Core, EF Core, PostgreSQL |
+| [think-auth](https://github.com/Think-Faster/think-auth) | вход и выпуск токенов RS256 | .NET 8, EF Core, PostgreSQL |
+| [think-infra](https://github.com/Think-Faster/think-infra) | стенд: Vault, PostgreSQL, Kafka, RabbitMQ, Redis, nginx, почта, Telegram; выкатка | Docker Compose, Bash, GitHub Actions |
+| [think-test](https://github.com/Think-Faster/think-test) | эмулятор шины объекта и проверка доступности стенда | Python, Django |
+
+```mermaid
+flowchart LR
+    BUS[шина объекта / эмулятор think-test] -->|POST /api/funnel/events| FUN[tf-funnel]
+    FUN -->|события| K[(Kafka)]
+    K --> ML[tf-model]
+    ML -->|прогноз| K
+    K --> BFF[think-bff]
+    BFF -->|команды модели, уведомления| R[(RabbitMQ)]
+    R --> ML
+    R --> NOT[tf-notify: почта, Telegram]
+    FRONT[think-front] -->|/api/bff| BFF
+    FRONT -->|/api/auth| AUTH[think-auth]
+    ML & FUN & NOT & BFF -->|аудит| RD[(Redis)] --> AUD[tf-audit] --> PG[(PostgreSQL)]
+    V[(Vault)] -.->|секреты при старте| ML & FUN & NOT & AUD & BFF & AUTH
+```
+
+Код, который работает на [thinkfaster.ru](https://thinkfaster.ru): у think-front, think-bff и
+think-auth — ветка `prod`; у think-infra — `prod`, документация — `dev`; у Think-Faster и think-test —
+`main`.
+
+---
+
 # tf.infra
 
 Инфраструктура Think Faster: docker compose на стенд, по папке на сервис.
