@@ -9,15 +9,17 @@
 # tf-audit в шаги по умолчанию не входит: нужна схема audit (schemas.conf + пароли в secrets.conf).
 #
 # Доступ к Vault — секреты Environment prod этого репозитория:
-#   VAULT_TOKEN   токен администратора (root) — нужен для setup.sh apply и для выдачи пар сервисам;
-#                 без него сработает только то, для чего пары уже заданы ниже;
+#   VAULT_ROLE_ID / VAULT_SECRET_ID  AppRole tf-deploy — ими входят шаги инфраструктуры (как deploy.yml);
+#   VAULT_TOKEN   токен администратора (необязательно) — нужен для setup.sh apply, secrets init
+#                 и выдачи пар сервисам; без него эти шаги пропускаются (skipped), а не падают;
 #   TF_AUTH_VAULT_ROLE_ID / TF_AUTH_VAULT_SECRET_ID  пара роли tf-svc-tf-auth (необязательно);
 #   TF_BFF_VAULT_ROLE_ID  / TF_BFF_VAULT_SECRET_ID   пара роли tf-svc-tf-bff  (необязательно);
 #   так же TF_AUDIT_* для tf-svc-tf-audit.
 # Если пары сервиса нет, она выдаётся на лету из VAULT_TOKEN (как setup.sh service-credentials),
 # маскируется и уходит только в окружение контейнера — в журнал и на диск не пишется.
 #
-# Шаги идут по порядку, упавший не останавливает следующие; итог — таблица в конце и код выхода.
+# Шаги идут по порядку, упавший не останавливает следующие; итог — таблица в конце и код выхода
+# (пропущенный шаг — skipped, на код выхода не влияет).
 name: deploy prod (infra + apps)
 
 on:
@@ -49,6 +51,8 @@ jobs:
       STEPS: ${{ github.event.inputs.steps || 'apply secrets postgree redis rabbitmq kafka auth bff mailing telegram' }}
       SERVICES_DIR: /srv/thinkfaster/services
       VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+      DEPLOY_VAULT_ROLE_ID: ${{ secrets.VAULT_ROLE_ID }}
+      DEPLOY_VAULT_SECRET_ID: ${{ secrets.VAULT_SECRET_ID }}
       TF_AUTH_VAULT_ROLE_ID: ${{ secrets.TF_AUTH_VAULT_ROLE_ID }}
       TF_AUTH_VAULT_SECRET_ID: ${{ secrets.TF_AUTH_VAULT_SECRET_ID }}
       TF_BFF_VAULT_ROLE_ID: ${{ secrets.TF_BFF_VAULT_ROLE_ID }}
@@ -66,13 +70,15 @@ jobs:
           source scripts/lib/vault.sh
           vault_require_unsealed
 
+          SKIPPED=100   # код шага «пропущен: нет доступа», в итоге — skipped
+
           # Пара AppRole сервиса: из секретов окружения или новая из VAULT_TOKEN.
           pair() {
             local prefix="$1" role="$2" rid sid
             rid="$(printenv "${prefix}_VAULT_ROLE_ID" || true)"
             sid="$(printenv "${prefix}_VAULT_SECRET_ID" || true)"
             if [ -z "$rid" ] || [ -z "$sid" ]; then
-              [ -n "${VAULT_TOKEN:-}" ] || { log "нет ${prefix}_VAULT_ROLE_ID/SECRET_ID и VAULT_TOKEN"; return 1; }
+              [ -n "${VAULT_TOKEN:-}" ] || { log "нет ${prefix}_VAULT_ROLE_ID/SECRET_ID и VAULT_TOKEN — пропущен"; return "$SKIPPED"; }
               rid="$(vault_cmd read -field=role_id "auth/approle/role/$role/role-id")" || return 1
               echo "::add-mask::$rid"
               sid="$(vault_cmd write -f -field=secret_id "auth/approle/role/$role/secret-id")" || return 1
@@ -84,13 +90,13 @@ jobs:
           }
 
           step_apply() {
-            [ -n "${VAULT_TOKEN:-}" ] || { log "VAULT_TOKEN не задан — apply пропущен"; return 0; }
+            [ -n "${VAULT_TOKEN:-}" ] || { log "VAULT_TOKEN не задан — apply пропущен"; return "$SKIPPED"; }
             bash hashicorp/scripts/setup.sh apply
           }
 
           # Недостающие секреты из secrets.conf (пароли kafka/rabbit новых сервисов и т.п.) — генерация.
           step_secrets() {
-            [ -n "${VAULT_TOKEN:-}" ] || { log "VAULT_TOKEN не задан — secrets init пропущен"; return 0; }
+            [ -n "${VAULT_TOKEN:-}" ] || { log "VAULT_TOKEN не задан — secrets init пропущен"; return "$SKIPPED"; }
             bash scripts/secrets.sh init < /dev/null
           }
 
@@ -114,8 +120,15 @@ jobs:
               docker logs --tail 40 "$name" )
           }
 
+          # Инфраструктура входит AppRole tf-deploy; её нет — deploy.sh возьмёт VAULT_TOKEN.
           step_infra() {
-            ( unset VAULT_ROLE_ID VAULT_SECRET_ID; bash scripts/deploy.sh "$1" )
+            ( unset VAULT_ROLE_ID VAULT_SECRET_ID
+              if [ -n "${DEPLOY_VAULT_ROLE_ID:-}" ] && [ -n "${DEPLOY_VAULT_SECRET_ID:-}" ]; then
+                export VAULT_ROLE_ID="$DEPLOY_VAULT_ROLE_ID" VAULT_SECRET_ID="$DEPLOY_VAULT_SECRET_ID"
+              elif [ -z "${VAULT_TOKEN:-}" ]; then
+                log "нет VAULT_ROLE_ID/VAULT_SECRET_ID и VAULT_TOKEN — пропущен"; exit "$SKIPPED"
+              fi
+              bash scripts/deploy.sh "$1" )
           }
 
           step_auth() {
@@ -171,7 +184,9 @@ jobs:
             esac
             rc=$?
             echo "::endgroup::"
-            if [ "$rc" -eq 0 ]; then summary+="$s ok"$'\n'; else summary+="$s FAILED ($rc)"$'\n'; failed=1; fi
+            if [ "$rc" -eq 0 ]; then summary+="$s ok"$'\n'
+            elif [ "$rc" -eq "$SKIPPED" ]; then summary+="$s skipped"$'\n'
+            else summary+="$s FAILED ($rc)"$'\n'; failed=1; fi
           done
 
           echo "== итог"; printf '%s' "$summary"
