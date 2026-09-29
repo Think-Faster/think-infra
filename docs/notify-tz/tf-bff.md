@@ -199,15 +199,19 @@ await channel.BasicPublishAsync(
 
 ## 6. Telegram (тот же exchange)
 
-Routing key **`telegram`**, сервис `tf-tg`. Тело то же, вместо `to.emails` — `to.chat_ids`:
+Routing key **`telegram`**, сервис `tf-tg`. Тело то же, вместо `to.emails` — `to.usernames` и/или `to.chat_ids`:
 
 ```json
-{ "schema": 1, "notice_id": "…", "subject": "…", "text": "…", "to": { "chat_ids": [123456789, -1001234567890] } }
+{ "schema": 1, "notice_id": "…", "subject": "…", "text": "…", "to": { "usernames": ["ivan_petrov"], "chat_ids": [-1001234567890] } }
 ```
 
-- `chat_ids` — числа (`chat_id` человека или группы; у групп отрицательные) или строки `"@канал"`.
+- `usernames` — имя пользователя Telegram из профиля (с `@` или без). Человек сам открывает бота и
+  нажимает «Старт»: tf-tg запоминает его `chat_id` и подставляет при отправке. Кто не нажал — ему не
+  уйдёт (в логе `notify.failed`/число отказов), остальным уйдёт.
+- Подключён ли человек и как зовут бота — ключи Redis `tg:user:<username>` и `tg:bot`
+  ([telegram/README.md](../../telegram/README.md#кому-слать)); их читает профиль в BFF.
+- `chat_ids` — числа (`chat_id` группы; у групп отрицательные) или строки `"@канал"`.
 - `subject` + `text` вместе ≤ ~4 000 символов (предел Telegram 4096), иначе — `tf.dlq`.
-- Человек должен сначала открыть бота и нажать «Старт»; `chat_id` дают администраторы инфраструктуры.
 
 ## 7. Как проверить
 

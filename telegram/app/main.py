@@ -6,8 +6,8 @@
     pip install -r requirements.txt
     python app/main.py
 
-Кому слать: chat_id человека или группы. Узнать — написать боту, затем
-`docker exec tf-tg python chats.py`.
+Кому слать: username человека, подключившего бота «Стартом» (links.py), chat_id группы или
+@канал. Кто писал боту — `docker exec tf-tg python chats.py`.
 """
 import logging
 import signal
@@ -15,6 +15,7 @@ import sys
 import threading
 
 import broker
+import links as tg_links
 import notice
 import settings as config
 import telegram_bot
@@ -37,8 +38,15 @@ def main() -> int:
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
 
+    redis = broker.redis_client(settings.redis_url, settings.redis_password)
+    links = tg_links.Links(redis)
     try:
-        log.info('Telegram: бот @%s — ok', telegram_bot.check(settings))
+        bot = telegram_bot.check(settings)
+        log.info('Telegram: бот @%s — ok', bot)
+        try:
+            links.bot(bot)
+        except Exception as e:
+            log.warning('Redis недоступен (%s): имя бота в профиле не покажется', type(e).__name__)
     except telegram_bot.TelegramError as e:
         if e.auth:
             # Сообщения всё равно не уйдут: очередь не читаем, пусть ждут в ней (TTL сутки).
@@ -49,9 +57,11 @@ def main() -> int:
             return 3
         log.warning('Telegram: %s — очередь читаю, сообщения повторятся, когда Telegram ответит', e.message)
 
-    consumer = broker.Consumer('telegram', notice.parse, notice.sender(settings),
-                               broker.Sent(broker.redis_client(settings.redis_url, settings.redis_password)),
-                               settings.retries)
+    if settings.poll:
+        # /start и /stop от людей: связь username → chat_id (links.py). Отдельный поток — очередь не ждёт.
+        threading.Thread(target=tg_links.poll, args=(settings, links, stop), name='links', daemon=True).start()
+    consumer = broker.Consumer('telegram', notice.parse, notice.sender(settings, links=links),
+                               broker.Sent(redis), settings.retries)
     broker.run(consumer, QUEUE,
                broker.parameters(settings.rabbit_url, settings.rabbit_user, settings.rabbit_password), stop)
     log.info('остановлен')
