@@ -202,18 +202,33 @@ TF_STAND=prod scripts/deploy.sh mailing && TF_STAND=prod scripts/deploy.sh teleg
 Файлы — [Think-Faster: docs/backend/stand.yml](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/stand.yml) и
 [compose.yml](https://github.com/Think-Faster/Think-Faster/blob/main/docs/backend/compose.yml). Redis, RabbitMQ и Kafka берутся из клона
 think-infra без изменений. К ним добавляются dev-Vault с тестовыми секретами, PostgreSQL со схемой аудита
-и эмулятор.
+и эмулятор потока из think-test. Интерфейса, входа и BFF в этом варианте нет: окна системы смотрят на
+[thinkfaster.ru](https://thinkfaster.ru) или на полном стенде (вариант A).
+
+Нужны три клона в одной папке: Think-Faster (сервисы и compose), think-infra (брокеры), think-test
+(код эмулятора):
 
 ```bash
-git clone https://github.com/Think-Faster/Think-Faster.git && git clone https://github.com/Think-Faster/think-infra.git
+git clone https://github.com/Think-Faster/Think-Faster.git && git clone https://github.com/Think-Faster/think-infra.git && git clone https://github.com/Think-Faster/think-test.git
 ```
+
+Пакет модели (обученные модели, шкалы, справочники; 87 МБ) лежит в релизе `dev-assets` репозитория
+Think-Faster. Скачать и распаковать рядом с клонами — в папке `bundle` сразу окажется `manifest.json`:
+
+```bash
+mkdir bundle && curl -L -o model-pa3.tar.gz https://github.com/Think-Faster/Think-Faster/releases/download/dev-assets/model-pa3.tar.gz && tar -xzf model-pa3.tar.gz -C bundle
+```
+
+Собрать пакет самому можно `ML/service/bundle.py` ([ML/INTEGRATION.md §13.6](https://github.com/Think-Faster/Think-Faster/blob/main/ML/INTEGRATION.md)),
+но для этого нужна выгрузка исследовательского прогона — готовый пакет проще.
 
 ```bash
 cd Think-Faster && cp docs/backend/stand.env.example docs/backend/stand.env
 ```
 
-В `stand.env` указать `TF_INFRA=<путь к think-infra>`, `TF_TEST=<путь к think-test>`,
-`TF_MODEL_BUNDLE_DIR=<папка пакета модели>` и тестовые пароли.
+В `stand.env` указать полные пути: `TF_INFRA` — к клону think-infra, `TF_TEST` — к клону think-test,
+`TF_MODEL_BUNDLE_DIR` — к папке `bundle`; пароли в образце уже тестовые, их можно оставить.
+`TF_FUNNEL_PULL=http://tf-emulator:8000` в образце уже задан — по нему воронка забирает поток у эмулятора.
 
 ```bash
 docker network create think-fast-net
